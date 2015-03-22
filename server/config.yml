@@ -1,0 +1,23 @@
+base_path: '/home/andy/projects/gplvote.trustnet.server'
+pid_file: '/var/run/gplvote.trustnet.server.pid'
+log_file: '/var/log/projects/gplvote.trustnet.server.log'
+cmd_path: '/home/andy/projects/gplvote.trustnet.server/server/signdoc-client-server.pl "/home/andy/projects/gplvote.signdoc.client/server/config.yml"'
+tmpl_path: '/home/andy/projects/gplvote.trustnet.server/server/.tmpls'
+product_name: 'gplvote.trustnet.server'
+site: 'client_signdoc.gplvote.org'
+fcgi:
+  host: '127.0.0.1'
+  port: '9004'
+  listen_queue: 128
+  nprocs: 1
+  min_nprocs: 1
+  max_nprocs: 4
+  delta_nprocs: 1
+  delta_time: 60
+  max_requests: 300
+db:
+  host: '127.0.0.1'
+  port: '5432'
+  name: 'trustnet_server'
+  user: 'postgres'
+  password: ''
