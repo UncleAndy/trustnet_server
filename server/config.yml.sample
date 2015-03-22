@@ -19,5 +19,5 @@ db:
   host: '127.0.0.1'
   port: '5432'
   name: 'trustnet_server'
-  user: 'postgres'
-  password: ''
+  user: 'postgres_user'
+  password: 'postgres_password'
