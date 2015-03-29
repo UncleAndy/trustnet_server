@@ -63,7 +63,7 @@ use vars qw($cfg $dbh);
 # Получение конфига из блока BEGIN
 $cfg = _get_config();
 
-use FCGI::ProcManager::Dynamic;
+use FCGI::ProcManager::Constrained;
 require $cfg->{'base_path'}.'/libs/proc.pm';
 require $cfg->{'base_path'}.'/libs/js.pm';
 require $cfg->{'base_path'}.'/libs/db.pm';
@@ -77,8 +77,10 @@ openlog($cfg->{product_name},'ndelay,pid', 'LOG_LOCAL6');
 
 to_syslog("Start...");
 
+$ENV{PM_MAX_REQUESTS} = $cfg->{fcgi}->{max_requests};
+
 # Запуск менеджера рабочих процессов
-my $pm = FCGI::ProcManager->new({
+my $pm = FCGI::ProcManager::Constrained->new({
 	n_processes => $cfg->{fcgi}->{nprocs},
 });
 $pm->pm_manage;
@@ -89,9 +91,8 @@ $dbh = db::check_db_connect($dbh, $cfg->{db}->{host}, $cfg->{db}->{port}, $cfg->
 
 # Начало FastCGI цикла рабочего процесса
 while (my $query = new CGI::Fast) {
-	$pm->pm_pre_dispatch();
+  $pm->pm_pre_dispatch();
 
-	
   my $result = {
     'status' => 0,
     'error' => '',
