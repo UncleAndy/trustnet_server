@@ -123,7 +123,7 @@ while (my $query = new CGI::Fast) {
       my @servers;
       
       my $count = $cfg->{trust_net}->{servers_count_for_app};
-      $count = $query->param('c') if defined($query->param('c')) && ($query->param('c') ne '')
+      $count = $query->param('c') if defined($query->param('c')) && ($query->param('c') ne '');
       my $c = $dbh->prepare('SELECT * FROM servers ORDER BY rating desc LIMIT ?');
       $c->execute($count);
       while (my $server = $c->fetchrow_hashref()) {
