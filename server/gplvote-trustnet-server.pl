@@ -193,7 +193,7 @@ while (my $query = new CGI::Fast) {
       if (defined($id) && ($id ne '')) {
         my $c = $dbh->prepare('SELECT sender, data, sign FROM messages WHERE id = ?');
         $c->execute($id);
-        my $message = $c->fetchrow_array());
+        my $message = $c->fetchrow_array();
         $c->finish;
         
         $result->{time} = time();
