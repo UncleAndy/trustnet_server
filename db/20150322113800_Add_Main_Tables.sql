@@ -5,7 +5,7 @@ CREATE TABLE servers (
     t_create integer,
     t_last_packet_send integer
 );
-CREATE INDEX servers_host_idx ON servers (rating, t_last_online);
+CREATE INDEX servers_rating_idx ON servers (rating, t_last_online);
 CREATE INDEX servers_host_idx ON servers (host, t_last_online);
 
 CREATE TABLE packets (
