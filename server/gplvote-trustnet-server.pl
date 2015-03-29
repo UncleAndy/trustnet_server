@@ -191,7 +191,7 @@ while (my $query = new CGI::Fast) {
       my $id = $query->param('id');
       
       if (defined($id) && ($id ne '')) {
-        my $c = $dbh->prepare('SELECT sender, data, sign FROM messages WHERE id = ?');
+        my $c = $dbh->prepare('SELECT sender, message, sign FROM messages WHERE id = ?');
         $c->execute($id);
         my $message = $c->fetchrow_array();
         $c->finish;
@@ -201,7 +201,7 @@ while (my $query = new CGI::Fast) {
         $result->{packet}->{type} = 'MESSAGE';
         $result->{packet}->{from} = $message->{sender};
         $result->{packet}->{to} = $message->{receiver};
-        $result->{packet}->{data} = $message->{data};
+        $result->{packet}->{data} = $message->{message};
         $result->{packet}->{sign} = $message->{sign};
       } else {
         $result->{status} = 400;
