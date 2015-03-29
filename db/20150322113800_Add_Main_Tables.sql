@@ -66,7 +66,7 @@ CREATE INDEX trusts_sign_pub_key_id_idx ON trusts (sign_pub_key_id);
 CREATE TABLE tags (
     tag_uuid varchar(24),
     person_id varchar(90),
-    data text,
+    tag_data text,
     level integer,
     sign text,
     sign_pub_key_id varchar(48)
@@ -81,10 +81,10 @@ CREATE INDEX tags_sign_pub_key_id_idx ON tags (sign_pub_key_id);
 CREATE TABLE messages (
     sender varchar(48),
     receiver varchar(48),
-    data text,
+    message text,
     sign text
 ) INHERITS (packets);
 CREATE INDEX messages_packets_id_idx ON messages (id);
 CREATE INDEX messages_packets_time_idx ON messages (time);
 CREATE INDEX messages_packets_type_idx ON messages (data_type);
-CREATE INDEX messages_to_idx ON messages (to, time);
+CREATE INDEX messages_to_idx ON messages (receiver, time);
