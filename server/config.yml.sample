@@ -21,3 +21,9 @@ db:
   name: 'trustnet_server'
   user: 'postgres_user'
   password: 'postgres_password'
+server_owner:
+  public_key_id: ''
+  personal_id: ''
+trust_net:
+  servers_count_for_app: 10
+  messages_list_size: 100

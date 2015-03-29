@@ -94,6 +94,7 @@ while (my $query = new CGI::Fast) {
 	
   my $result = {
     'status' => 0,
+    'error' => '',
   };
 
   ########################################
@@ -112,12 +113,130 @@ while (my $query = new CGI::Fast) {
     }
 
     # Клиентские URI
+    # Получение данных приложением с сервера
+    case '/get/time' {
+      # Возвращает только текущее время сервера
+      $result->{time} = time();
+      $result->{packet} = {};
+    }
     case '/get/servers' {
+      # В параметре "c" может передаваться максимальное количество возвращаемых серверов
+      # Возвращаеются сервера с максимальным рейтингом
+      my @servers;
       
+      my $count = $cfg->{trust_net}->{servers_count_for_app};
+      $count = $query->param('c') if defined($query->param('c')) && ($query->param('c') ne '')
+      my $c = $dbh->prepare('SELECT * FROM servers ORDER BY rating desc LIMIT ?');
+      $c->execute($count);
+      while (my $server = $c->fetchrow_hashref()) {
+        push(@servers, $server->{host});
+      };
+      $c->finish;
+
+      $result->{time} = time();
+      $result->{packet} = {};
+      $result->{packet}->{type} = 'SERVERS';
+      $result->{packet}->{list} = \@servers;
+    }
+    case '/get/public_key' {
+      # В параметре id должен содержаться идентификатор публичного ключа
+      my $id = $query->param('id');
+      
+      if (defined($id) && ($id ne '')) {
+        my $c = $dbh->prepare('SELECT public_key FROM public_keys WHERE public_key_id = ?');
+        $c->execute($id);
+        my ($public_key) = $c->fetchrow_array();
+        $c->finish;
+        
+        if (defined($public_key) && ($public_key ne '')) {
+          $result->{time} = time();
+          $result->{packet} = {};
+          $result->{packet}->{type} = 'PUBLIC_KEY';
+          $result->{packet}->{public_key} = $public_key;
+        } else {
+          $result->{status} = 404;
+          $result->{error} = 'Public key absent on server';
+        };
+      } else {
+        $result->{status} = 400;
+        $result->{error} = 'Public key ID parameter absent';
+      }
+    }
+    case '/get/messages_list' {
+      # В параметре передается, идентифкатор публичного ключа пользователя и количество последних сообщений для скачивания
+      # Возвращаются идентификаторы определенного количества последних сообщений
+      my $id = $query->param('id');
+      my $count = $query->param('c');
+      $count = $cfg->{trust_net}->{messages_list_size} if !defined($count) || ($count eq '');
+      
+      if (defined($id) && ($id ne '')) {
+        my @messages;
+      
+        my $c = $dbh->prepare('SELECT id FROM messages WHERE receiver = ? ORDER BY time desc LIMIT ?');
+        $c->execute($id, $count);
+        while (my ($message_id) = $c->fetchrow_array()) {
+          push(@messages, $message_id);
+        };
+        $c->finish;
+        
+        $result->{time} = time();
+        $result->{packet} = {};
+        $result->{packet}->{type} = 'LIST_MESSAGES';
+        $result->{packet}->{list} = \@messages;
+      } else {
+        $result->{status} = 400;
+        $result->{error} = 'Public key ID parameter absent';
+      }
+    }
+    case '/get/message' {
+      # В параметре - id пакета сообщения для получения
+      my $id = $query->param('id');
+      
+      if (defined($id) && ($id ne '')) {
+        my $c = $dbh->prepare('SELECT sender, data, sign FROM messages WHERE id = ?');
+        $c->execute($id);
+        my $message = $c->fetchrow_array());
+        $c->finish;
+        
+        $result->{time} = time();
+        $result->{packet} = {};
+        $result->{packet}->{type} = 'MESSAGE';
+        $result->{packet}->{from} = $message->{sender};
+        $result->{packet}->{to} = $message->{receiver};
+        $result->{packet}->{data} = $message->{data};
+        $result->{packet}->{sign} = $message->{sign};
+      } else {
+        $result->{status} = 400;
+        $result->{error} = 'Message ID parameter absent';
+      }
+    }
+
+    # Отправка данных с клиента на сервер
+    case '/put/public_key' {
+      # Парсим JSON пакет из POST данных
+      my $doc = json_from_post($query);
+      
+      if (defined($doc) && ($doc ne '')) {
+      
+      
+      
+      
+      
+      } else {
+        $result->{status} = 400;
+        $result->{error} = 'Input document absent';
+      }
+    }
+    case '/put/attestation' {
+    }
+    case '/put/tag' {
+    }
+    case '/put/message' {
     }
 
 
-
+    # Межсерверные URI
+    
 
 
 
@@ -179,4 +298,10 @@ sub do_template
 
     print "\n";
     print $out;
+};
+
+sub json_from_post {
+    my ($query) = @_;
+    
+    return(js::to_hash($query->param('POSTDATA')));
 };
