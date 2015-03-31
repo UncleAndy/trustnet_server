@@ -48,7 +48,6 @@ use MIME::Base64 qw(encode_base64);
 use LWP::UserAgent;
 use Data::Dumper;
 use URI::Encode qw(uri_encode uri_decode);
-use Template;
 use utf8;
 use Encode qw(encode decode_utf8);
 
@@ -84,12 +83,12 @@ $pm->pm_manage;
 
 ####### Начало рабочего процесса #######
 
-$dbh = db::check_db_connect($dbh, $cfg->{db}->{host}, $cfg->{db}->{port}, $cfg->{db}->{name}, $cfg->{db}->{user}, $cfg->{db}->{password});
-
 # Начало FastCGI цикла рабочего процесса
 while (my $query = new CGI::Fast) {
   $pm->pm_pre_dispatch();
 
+  $dbh = db::check_db_connect($dbh, $cfg->{db}->{host}, $cfg->{db}->{port}, $cfg->{db}->{name}, $cfg->{db}->{user}, $cfg->{db}->{password}, 10);
+  
   my $result = {
     'status' => 0,
     'error' => '',
@@ -106,10 +105,6 @@ while (my $query = new CGI::Fast) {
   };
   
   switch ($uri) {
-    case '/' {
-      do_template($query, 'karkas.tpl', { contentsection => 'c_index.tpl' });
-    }
-
     # Клиентские URI
     # Получение данных приложением с сервера
     case '/get/time' {
@@ -239,7 +234,8 @@ while (my $query = new CGI::Fast) {
 
 
     else {
-      do_template($query, 'karkas.tpl', { contentsection => 'c_bad_request.tpl' });
+        $result->{status} = 400;
+        $result->{error} = 'Bad request path';
     };
   };
 
@@ -252,50 +248,6 @@ closelog();
 sub to_syslog {
   my ($msg) = @_;
   syslog("alert", $msg);
-};
-
-sub do_template
-{
-    my ($query, $karkas, $prms) = @_;
-
-    my $vars = {
-        env => \ %ENV,
-        header => 'b_header.tpl',
-        contentsection => 'c_index.tpl',
-        footer => 'b_footer.tpl',
-        cfg => $cfg,
-    };
-
-    foreach my $k (keys %$prms)
-    {
-        $vars->{$k} = $prms->{$k};
-    };
-
-    my $include_path = $cfg->{tmpl_path};
-
-    my $out;
-    my $tt = Template->new({
-        START_TAG       => quotemeta('<?'),
-	END_TAG         => quotemeta('?>'),
-	INCLUDE_PATH    => $include_path,
-	INTERPOLATE     => 0,
-	AUTO_RESET      => 1,
-	ERROR           => '_error',
-	EVAL_PERL       => 1,
-	CACHE_SIZE      => 1024,
-	COMPILE_EXT     => '.tpl',
-	COMPILE_DIR     => '/var/tmp/tt2cache',
-	LOAD_PERL       => 1,
-	RECURSION       => 1,
-	OUTPUT          => \ $out,
-    });
-
-    my $ttresult = $tt->process($karkas, $vars);
-
-    print $query->header(-type=>'text/html',-charset=>'UTF-8');
-
-    print "\n";
-    print $out;
 };
 
 sub json_from_post {
