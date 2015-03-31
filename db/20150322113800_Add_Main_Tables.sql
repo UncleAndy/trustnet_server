@@ -19,8 +19,7 @@ CREATE INDEX packets_data_type_idx ON packets (data_type);
 
 CREATE TABLE public_keys (
     public_key text,
-    public_key_id varchar(48),
-    sign text
+    public_key_id varchar(48)
 ) INHERITS (packets);
 CREATE INDEX public_keys_packets_id_idx ON public_keys (id);
 CREATE INDEX public_keys_packets_time_idx ON public_keys (time);

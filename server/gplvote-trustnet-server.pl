@@ -42,7 +42,7 @@ use Sys::Syslog;
 use Time::HiRes qw(usleep);
 use Switch;
 use DBI;
-use Digest::SHA qw(sha256_base64);
+use Digest::SHA qw(sha256_base64 sha512_base64);
 use Crypt::OpenSSL::RSA;
 use MIME::Base64 qw(encode_base64);
 use LWP::UserAgent;
@@ -90,11 +90,8 @@ while (my $query = new CGI::Fast) {
   $dbh = db::check_db_connect($dbh, $cfg->{db}->{host}, $cfg->{db}->{port}, $cfg->{db}->{name}, $cfg->{db}->{user}, $cfg->{db}->{password}, 10);
   
   my $result = {
-    'status' => 0,
-    'error' => '',
+    'status' => 200,
   };
-
-  ########################################
   
   my $site = $cfg->{site};
 
@@ -210,21 +207,41 @@ while (my $query = new CGI::Fast) {
 
     # Отправка данных с клиента на сервер
     case '/put/public_key' {
-      # Парсим JSON пакет из POST данных
       my $doc = json_from_post($query);
       
       if (defined($doc) && ($doc ne '')) {
-      
-      
-      
-      
-      
+        my $public_key_id = calc_pub_key_id($doc->{public_key});
+        
+        # Проверяем наличие данного ключа в базе
+        if (!is_public_key_exists($public_key_id)) {
+          # Проверяем подпись
+          if (user_sign_is_valid($doc->{public_key}, $doc->{sign}, $doc->{public_key}, 1)) {
+            insert_public_key($doc, $public_key_id);
+          } else {
+            $result->{status} = 412;
+            $result->{error} = 'Sign is bad';
+          };
+        } else {
+          $result->{status} = 202;
+        };
       } else {
         $result->{status} = 400;
         $result->{error} = 'Input document absent';
       }
     }
     case '/put/attestation' {
+      my $doc = json_from_post($query);
+      
+      if (defined($doc) && ($doc ne '')) {
+        
+        
+        
+        
+        
+      } else {
+        $result->{status} = 400;
+        $result->{error} = 'Input document absent';
+      }
     }
     case '/put/tag' {
     }
@@ -243,12 +260,16 @@ while (my $query = new CGI::Fast) {
     };
   };
 
+  $dbh->commit;
+  
   json_out($query, $result);
-  ########################################
 
   $pm->pm_post_dispatch();
 };
 closelog();
+
+###################################################################################
+
 
 sub json_out {
   my ($query, $outhash) = @_;
@@ -267,4 +288,83 @@ sub json_from_post {
 sub to_syslog {
   my ($msg) = @_;
   syslog("alert", $msg);
+};
+
+# ============================================================
+
+sub is_public_key_exists {
+  my ($public_key_id) = @_;
+  
+  # Проверяем наличие данного ключа в базе
+  my $c = $dbh->prepare('SELECT id FROM public_keys WHERE public_key_id = ?');
+  $c->execute($public_key_id);
+  my ($pk_id) = $c->fetchrow_array();
+  $c->finish;
+  
+  return(defined($pk_id) && ($pk_id ne ''));
+}
+
+sub insert_public_key {
+  my ($doc, $public_key_id) = @_;
+  
+  # Вычисляем идентификатор пакета
+  my $packet_id = sha512_base64(_stringify($doc));
+  
+  # Ищем такой пакет в базе
+  if (!is_packet_exists($packet_id, 'public_keys')) {
+    $dbh->do('INSERT INTO public_keys (id, time, path, data, data_type, public_key, public_key_id) VALUES (?, ?, ?, ?, ?, ?, ?)', undef, 
+      $packet_id, 
+      time(), 
+      $cfg->{site}, 
+      js::from_hash($doc),
+      'PUBLIC_KEY',
+      $doc->{public_key},
+      $public_key_id);
+    if (!$dbh->err) {
+      notify_new_packet($packet_id);
+    } else {
+      to_syslog('DB ERROR: '.$dbh->errstr);
+    };
+  } else {
+    to_syslog('LOGIC ERROR: Packets IDs DUP!!! For '.Dumper($doc));
+  };
+};
+
+sub is_packet_exists {
+  my ($packet_id, $table) = @_;
+  
+  $table = 'packets' if !defined($table) || ($table eq '');
+  my $c = $dbh->prepare('SELECT id FROM '.$table.' WHERE id = ?')
+  $c->execute($packet_id);
+  my ($pk_id) = $c->fetchrow_array;
+  $c->execute();
+  
+  return(defined($pk_id) && ($pk_id ne ''));
+};
+
+sub _stringify {
+  my ($v) = @_;
+  
+  if (ref($v) eq 'SCALAR') {
+    return('"'.$v.'"');
+  } elsif ($ref($v) eq 'ARRAY') {
+    return('['.join(',', map({ _stringify($_) }, @{$v})).']')
+  } elsif ($ref($v) eq 'HASH') {
+    my $s = '';
+    my $sep = '';
+    foreach my $key (sort(keys(%{$v}))) {
+      $s .= $sep.'"'.$key.'":"'._stringify($v->{$key});
+      $sep = ';';
+    }
+    return('{'.$s.'}');
+  }
+};
+
+
+# TODO: Нотификация о новом пакете - пометка пакета как требуемого для отправки на другие сервера
+sub notify_new_packet {
+  my ($packet_id) = @_;
+  
+  
+  
 };
