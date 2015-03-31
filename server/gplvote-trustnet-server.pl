@@ -189,14 +189,19 @@ while (my $query = new CGI::Fast) {
         $c->execute($id);
         my $message = $c->fetchrow_array();
         $c->finish;
-        
-        $result->{time} = time();
-        $result->{packet} = {};
-        $result->{packet}->{type} = 'MESSAGE';
-        $result->{packet}->{from} = $message->{sender};
-        $result->{packet}->{to} = $message->{receiver};
-        $result->{packet}->{data} = $message->{message};
-        $result->{packet}->{sign} = $message->{sign};
+
+        if (defined($message) && ($message ne '')) {
+          $result->{time} = time();
+          $result->{packet} = {};
+          $result->{packet}->{type} = 'MESSAGE';
+          $result->{packet}->{from} = $message->{sender};
+          $result->{packet}->{to} = $message->{receiver};
+          $result->{packet}->{data} = $message->{message};
+          $result->{packet}->{sign} = $message->{sign};
+        } else {
+          $result->{status} = 404;
+          $result->{error} = 'Message not found';
+        };
       } else {
         $result->{status} = 400;
         $result->{error} = 'Message ID parameter absent';
