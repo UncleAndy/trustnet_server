@@ -348,7 +348,7 @@ sub _stringify {
   if (ref($v) eq 'SCALAR') {
     return('"'.$v.'"');
   } elsif (ref($v) eq 'ARRAY') {
-    return('['.join(',', map({ _stringify($_) }, @{$v})).']')
+    return('['.join(',', map { _stringify($_) } @{$v}).']');
   } elsif (ref($v) eq 'HASH') {
     my $s = '';
     my $sep = '';
