@@ -239,19 +239,28 @@ while (my $query = new CGI::Fast) {
     };
   };
 
+  json_out($query, $result);
   ########################################
 
   $pm->pm_post_dispatch();
 };
 closelog();
 
-sub to_syslog {
-  my ($msg) = @_;
-  syslog("alert", $msg);
-};
+sub json_out {
+  my ($query, $outhash) = @_;
+
+  print $query->header(-type=>'application/json',-charset=>'UTF-8');
+
+  print js::from_hash($outhash, 1), "\n";
+}
 
 sub json_from_post {
     my ($query) = @_;
     
     return(js::to_hash($query->param('POSTDATA')));
+};
+
+sub to_syslog {
+  my ($msg) = @_;
+  syslog("alert", $msg);
 };
