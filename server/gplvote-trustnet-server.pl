@@ -110,7 +110,6 @@ while (my $query = new CGI::Fast) {
     case '/get/time' {
       # Возвращает только текущее время сервера
       $result->{time} = time();
-      $result->{packet} = {};
     }
     case '/get/servers' {
       # В параметре "c" может передаваться максимальное количество возвращаемых серверов
