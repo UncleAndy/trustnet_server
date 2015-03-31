@@ -334,7 +334,7 @@ sub is_packet_exists {
   my ($packet_id, $table) = @_;
   
   $table = 'packets' if !defined($table) || ($table eq '');
-  my $c = $dbh->prepare('SELECT id FROM '.$table.' WHERE id = ?')
+  my $c = $dbh->prepare('SELECT id FROM '.$table.' WHERE id = ?');
   $c->execute($packet_id);
   my ($pk_id) = $c->fetchrow_array;
   $c->execute();
