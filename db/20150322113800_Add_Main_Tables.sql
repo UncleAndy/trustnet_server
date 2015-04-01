@@ -12,8 +12,10 @@ CREATE TABLE packets (
     id varchar(90) NOT NULL PRIMARY KEY,
     time integer,
     path text,
-    data text,
-    data_type varchar(24)
+    doc_type varchar(24),
+    doc text,
+    sign text,
+    sign_pub_key_id varchar(48)
 );
 CREATE INDEX packets_data_type_idx ON packets (data_type);
 
@@ -27,9 +29,7 @@ CREATE INDEX public_keys_packets_type_idx ON public_keys (data_type);
 CREATE INDEX public_keys_id_idx ON public_keys (public_key_id);
 
 CREATE TABLE servers_announces (
-    servers text,
-    sign text,
-    sign_pub_key_id varchar(48)
+    servers text
 ) INHERITS (packets);
 CREATE INDEX sannounces_packets_id_idx ON servers_announces (id);
 CREATE INDEX sannounces_packets_time_idx ON servers_announces (time);
@@ -39,9 +39,7 @@ CREATE INDEX sannounces_sign_id_idx ON servers_announces (sign_pub_key_id);
 CREATE TABLE attestations (
     person_id varchar(90),
     public_key_id varchar(48),
-    level integer,
-    sign text,
-    sign_pub_key_id varchar(48)
+    level integer
 ) INHERITS (packets);
 CREATE INDEX attestations_packets_id_idx ON attestations (id);
 CREATE INDEX attestations_packets_time_idx ON attestations (time);
@@ -52,9 +50,7 @@ CREATE INDEX attestations_sign_pub_key_id_idx ON attestations (sign_pub_key_id);
 
 CREATE TABLE trusts (
     person_id varchar(90),
-    level integer,
-    sign text,
-    sign_pub_key_id varchar(48)
+    level integer
 ) INHERITS (packets);
 CREATE INDEX trusts_packets_id_idx ON trusts (id);
 CREATE INDEX trusts_packets_time_idx ON trusts (time);
@@ -66,9 +62,7 @@ CREATE TABLE tags (
     tag_uuid varchar(24),
     person_id varchar(90),
     tag_data text,
-    level integer,
-    sign text,
-    sign_pub_key_id varchar(48)
+    level integer
 ) INHERITS (packets);
 CREATE INDEX tags_packets_id_idx ON tags (id);
 CREATE INDEX tags_packets_time_idx ON tags (time);
@@ -78,10 +72,8 @@ CREATE INDEX tags_person_id_idx ON tags (person_id);
 CREATE INDEX tags_sign_pub_key_id_idx ON tags (sign_pub_key_id);
 
 CREATE TABLE messages (
-    sender varchar(48),
     receiver varchar(48),
     message text,
-    sign text
 ) INHERITS (packets);
 CREATE INDEX messages_packets_id_idx ON messages (id);
 CREATE INDEX messages_packets_time_idx ON messages (time);

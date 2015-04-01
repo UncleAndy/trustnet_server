@@ -2,6 +2,14 @@
 
 # FastCGI обрабатывающий запросы в систему:
 
+# Возвращаемые статусы:
+# 200 - ок
+# 202 - такие данные уже есть на сервере
+# 400 - неверные параметры запроса
+# 402 - неверная подпись данных
+# 404 - на сервере отсутствует запрошенные данные
+# 412 - на сервере отсутствует публичный ключ по которому можно проверить подпись переданных данных 
+
 BEGIN {
   use YAML;
 
@@ -205,17 +213,19 @@ while (my $query = new CGI::Fast) {
       }
     }
 
+    #=========================================================================
     # Отправка данных с клиента на сервер
     case '/put/public_key' {
-      my $doc = json_from_post($query);
+      my $packet = json_from_post($query);
+      my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
       
-      if (defined($doc) && ($doc ne '')) {
+      if (defined($doc)) {
         my $public_key_id = calc_pub_key_id($doc->{public_key});
         
         # Проверяем наличие данного ключа в базе
         if (!is_public_key_exists($public_key_id)) {
           # Проверяем подпись
-          if (user_sign_is_valid($doc->{public_key}, $doc->{sign}, $doc->{public_key}, 1)) {
+          if (user_sign_is_valid($doc->{public_key}, $packet->{sign}, $doc->{code}, 1)) {
             insert_public_key($doc, $public_key_id);
           } else {
             $result->{status} = 412;
@@ -230,14 +240,31 @@ while (my $query = new CGI::Fast) {
       }
     }
     case '/put/attestation' {
-      my $doc = json_from_post($query);
+      my $packet = json_from_post($query);
+      my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
       
       if (defined($doc) && ($doc ne '')) {
-        
-        
-        
-        
-        
+        # Проверяем наличие такого аттестата в базе
+        my $packet_id = packet_id($doc);
+        if (!is_packet_exists($packet_id, 'attestations')) {
+          # Проверяем наличие в базе ключа из подписи
+          if (is_public_key_exists($packet->{sign_pub_key_id})) {
+            # Проверяем подпись
+            my $public_key = get_public_key_by_id($packet->{sign_pub_key_id});
+            if (doc_sign_is_valid($public_key, $doc)) {
+              # Добавляем атестат
+              insert_attestation($doc, $packet->{sign}, $packet->{sign_pub_key_id});
+            } else {
+              $result->{status} = 412;
+              $result->{error} = 'Sign is bad';
+            };
+          } else {
+            $result->{status} = 402;
+            $result->{error} = 'Public key for signature not found';
+          };
+        } else {
+          $result->{status} = 202;
+        };
       } else {
         $result->{status} = 400;
         $result->{error} = 'Input document absent';
@@ -249,6 +276,7 @@ while (my $query = new CGI::Fast) {
     }
 
 
+    #=========================================================================
     # Межсерверные URI
     
 
@@ -304,15 +332,27 @@ sub is_public_key_exists {
   return(defined($pk_id) && ($pk_id ne ''));
 }
 
+sub get_public_key_by_id {
+  my ($public_key_id) = @_;
+  
+  # Проверяем наличие данного ключа в базе
+  my $c = $dbh->prepare('SELECT public_key FROM public_keys WHERE public_key_id = ?');
+  $c->execute($public_key_id);
+  my ($public_key) = $c->fetchrow_array();
+  $c->finish;
+  
+  return($public_key);
+}
+
 sub insert_public_key {
   my ($doc, $public_key_id) = @_;
   
   # Вычисляем идентификатор пакета
-  my $packet_id = sha512_base64(_stringify($doc));
+  my $packet_id = packet_id($doc);
   
   # Ищем такой пакет в базе
   if (!is_packet_exists($packet_id, 'public_keys')) {
-    $dbh->do('INSERT INTO public_keys (id, time, path, data, data_type, public_key, public_key_id) VALUES (?, ?, ?, ?, ?, ?, ?)', undef, 
+    $dbh->do('INSERT INTO public_keys (id, time, path, doc, doc_type, public_key, public_key_id) VALUES (?, ?, ?, ?, ?, ?, ?)', undef, 
       $packet_id, 
       time(), 
       $cfg->{site}, 
@@ -328,6 +368,48 @@ sub insert_public_key {
   } else {
     to_syslog('LOGIC ERROR: Packets IDs DUP!!! For '.Dumper($doc));
   };
+};
+
+sub insert_attestation {
+  my ($doc, $sign, $sign_pub_key_id) = @_;
+  
+  my $packet_id = packet_id($doc);
+  
+  if (!is_packet_exists($packet_id, 'attestations')) {
+    my $data = js::to_hash($doc->data);
+    
+    if (defined($data) && ($data ne '')) {
+      my $person_id = $data->[0];
+      my $public_key_id = $data->[1];
+      my $level = $data->[2];
+      
+      $dbh->do('INSERT INTO attestations (id, time, path, doc, doc_type, person_id, public_key_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+        $packet_id, 
+        time(), 
+        $cfg->{site}, 
+        js::from_hash($doc),
+        'ATTESTATION',
+        $person_id,
+        $public_key_id,
+        $level,
+        $sign,
+        $sign_pub_key_id
+        );
+      if (!$dbh->err) {
+        notify_new_packet($packet_id);
+      } else {
+        to_syslog('DB ERROR: '.$dbh->errstr);
+      };
+    };
+  } else {
+    to_syslog('LOGIC ERROR: Packets IDs DUP!!! For '.Dumper($doc));
+  };
+};
+
+sub packet_id {
+  my ($doc) = @_;
+  
+  return(sha512_base64(_stringify($doc)));
 };
 
 sub is_packet_exists {
@@ -357,6 +439,21 @@ sub _stringify {
       $sep = ';';
     }
     return('{'.$s.'}');
+  }
+};
+
+#============================================================
+# Функции проверки ЭЦП документа, подписанного через Sign Doc
+#============================================================
+sub doc_sign_is_valid {
+  my ($pub_key, $doc) = @_;
+
+  if (defined($pub_key) && ($pub_key ne '')) {
+    my $signed_str = $doc->{site}.":".$doc->{doc_id}.":".$doc->{data}.":".$doc->{template};
+    
+    return(user_sign_is_valid($pub_key, $doc->{sign}, $signed_str, 1));
+  } else {
+    return(undef);
   }
 };
 
