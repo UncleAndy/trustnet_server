@@ -94,4 +94,4 @@ CREATE TABLE packets_sended (
     t_create integer
 );
 ALTER TABLE packets_sended ADD PRIMARY KEY (id_new_packet, id_server);
-CREATE INDEX packets_sended_server_idx ON new_packets (id_server);
+CREATE INDEX packets_sended_server_idx ON packets_sended (id_server);
