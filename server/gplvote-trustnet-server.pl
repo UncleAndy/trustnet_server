@@ -478,7 +478,7 @@ sub insert_tag {
     
     if (defined($data) && ($data ne '')) {
       my $tag_id = $data->[0];
-      my $personal_id = $data->[1];
+      my $person_id = $data->[1];
       my $tag_data = $data->[2];
       my $level = $data->[3];
       
