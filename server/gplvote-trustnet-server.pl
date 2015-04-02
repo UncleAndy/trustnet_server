@@ -213,8 +213,9 @@ while (my $query = new CGI::Fast) {
       }
     }
 
-    #=========================================================================
+    ######################################################################
     # Отправка данных с клиента на сервер
+    ######################################################################
     case '/put/public_key' {
       my $packet = json_from_post($query);
       my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
@@ -241,43 +242,31 @@ while (my $query = new CGI::Fast) {
     }
     case '/put/attestation' {
       my $packet = json_from_post($query);
-      my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
       
-      if (defined($doc) && ($doc ne '')) {
-        # Проверяем наличие такого аттестата в базе
-        my $packet_id = packet_id($doc);
-        if (!is_packet_exists($packet_id, 'attestations')) {
-          # Проверяем наличие в базе ключа из подписи
-          if (is_public_key_exists($packet->{sign_pub_key_id})) {
-            # Проверяем подпись
-            my $public_key = get_public_key_by_id($packet->{sign_pub_key_id});
-            if (doc_sign_is_valid($public_key, $doc)) {
-              # Добавляем атестат
-              insert_attestation($doc, $packet->{sign}, $packet->{sign_pub_key_id});
-            } else {
-              $result->{status} = 412;
-              $result->{error} = 'Sign is bad';
-            };
-          } else {
-            $result->{status} = 402;
-            $result->{error} = 'Public key for signature not found';
-          };
-        } else {
-          $result->{status} = 202;
-        };
-      } else {
-        $result->{status} = 400;
-        $result->{error} = 'Input document absent';
-      }
+      $result = add_packet_from_app(\&insert_attestation, $packet, 'attestations', $result);
+    }
+    case '/put/trust' {
+      my $packet = json_from_post($query);
+      
+      $result = add_packet_from_app(\&insert_trust, $packet, 'trusts', $result);
     }
     case '/put/tag' {
+      my $packet = json_from_post($query);
+      
+      $result = add_packet_from_app(\&insert_tag, $packet, 'tags', $result);
     }
     case '/put/message' {
+      my $packet = json_from_post($query);
+      
+      $result = add_packet_from_app(\&insert_message, $packet, 'messages', $result);
     }
 
 
-    #=========================================================================
+    ######################################################################
     # Межсерверные URI
+    ######################################################################
+    
+    
     
 
 
@@ -296,8 +285,7 @@ while (my $query = new CGI::Fast) {
 };
 closelog();
 
-###################################################################################
-
+######################################################################
 
 sub json_out {
   my ($query, $outhash) = @_;
@@ -318,7 +306,7 @@ sub to_syslog {
   syslog("alert", $msg);
 };
 
-# ============================================================
+######################################################################
 
 sub is_public_key_exists {
   my ($public_key_id) = @_;
@@ -343,6 +331,44 @@ sub get_public_key_by_id {
   
   return($public_key);
 }
+
+######################################################################
+# Обработка входящих документов (от приложения)
+######################################################################
+
+sub add_packet_from_app {
+  my ($insert_func, $packet, $table, $result) = @_;
+  
+  my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
+  
+  if (defined($doc) && ($doc ne '')) {
+    # Проверяем наличие такого аттестата в базе
+    my $packet_id = packet_id($doc);
+    if (!is_packet_exists($packet_id, $table)) {
+      # Проверяем наличие в базе ключа из подписи
+      if (is_public_key_exists($packet->{sign_pub_key_id})) {
+        # Проверяем подпись
+        my $public_key = get_public_key_by_id($packet->{sign_pub_key_id});
+        if (doc_sign_is_valid($public_key, $doc)) {
+          $insert_func->($doc, $packet->{sign}, $packet->{sign_pub_key_id});
+        } else {
+          $result->{status} = 412;
+          $result->{error} = 'Sign is bad';
+        };
+      } else {
+        $result->{status} = 402;
+        $result->{error} = 'Public key for signature not found';
+      };
+    } else {
+      $result->{status} = 202;
+    };
+  } else {
+    $result->{status} = 400;
+    $result->{error} = 'Input document absent';
+  }
+
+  return($result);
+};
 
 sub insert_public_key {
   my ($doc, $public_key_id) = @_;
@@ -406,6 +432,114 @@ sub insert_attestation {
   };
 };
 
+sub insert_trust {
+  my ($doc, $sign, $sign_pub_key_id) = @_;
+  
+  my $packet_id = packet_id($doc);
+  
+  if (!is_packet_exists($packet_id, 'trusts')) {
+    my $data = js::to_hash($doc->data);
+    
+    if (defined($data) && ($data ne '')) {
+      my $person_id = $data->[0];
+      my $level = $data->[1];
+      
+      $dbh->do('INSERT INTO trusts (id, time, path, doc, doc_type, person_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+        $packet_id, 
+        time(), 
+        $cfg->{site}, 
+        js::from_hash($doc),
+        'TRUST',
+        $person_id,
+        $level,
+        $sign,
+        $sign_pub_key_id
+        );
+      if (!$dbh->err) {
+        notify_new_packet($packet_id);
+      } else {
+        to_syslog('DB ERROR: '.$dbh->errstr);
+      };
+    };
+  } else {
+    to_syslog('LOGIC ERROR: Packets IDs DUP!!! For '.Dumper($doc));
+  };
+};
+
+sub insert_tag {
+  my ($doc, $sign, $sign_pub_key_id) = @_;
+  
+  my $packet_id = packet_id($doc);
+  
+  if (!is_packet_exists($packet_id, 'tags')) {
+    my $data = js::to_hash($doc->data);
+    
+    if (defined($data) && ($data ne '')) {
+      my $tag_id = $data->[0];
+      my $personal_id = $data->[1];
+      my $tag_data = $data->[2];
+      my $level = $data->[3];
+      
+      $dbh->do('INSERT INTO tags (id, time, path, doc, doc_type, tag_uuid, person_id, tag_data, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+        $packet_id, 
+        time(), 
+        $cfg->{site}, 
+        js::from_hash($doc),
+        'TAG',
+        $tag_id,
+        $person_id,
+        $tag_data,
+        $level,
+        $sign,
+        $sign_pub_key_id
+        );
+      if (!$dbh->err) {
+        notify_new_packet($packet_id);
+      } else {
+        to_syslog('DB ERROR: '.$dbh->errstr);
+      };
+    };
+  } else {
+    to_syslog('LOGIC ERROR: Packets IDs DUP!!! For '.Dumper($doc));
+  };
+};
+
+sub insert_message {
+  my ($doc, $sign, $sign_pub_key_id) = @_;
+  
+  my $packet_id = packet_id($doc);
+  
+  if (!is_packet_exists($packet_id, 'tags')) {
+    my $data = js::to_hash($doc->data);
+    
+    if (defined($data) && ($data ne '')) {
+      my $receiver = $data->[0];
+      my $message = $data->[1];
+      
+      $dbh->do('INSERT INTO tags (id, time, path, doc, doc_type, receiver, message, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+        $packet_id, 
+        time(), 
+        $cfg->{site}, 
+        js::from_hash($doc),
+        'MESSAGE',
+        $receiver,
+        $message,
+        $sign,
+        $sign_pub_key_id
+        );
+      if (!$dbh->err) {
+        notify_new_packet($packet_id);
+      } else {
+        to_syslog('DB ERROR: '.$dbh->errstr);
+      };
+    };
+  } else {
+    to_syslog('LOGIC ERROR: Packets IDs DUP!!! For '.Dumper($doc));
+  };
+};
+
+######################################################################
+
 sub packet_id {
   my ($doc) = @_;
   
@@ -442,9 +576,9 @@ sub _stringify {
   }
 };
 
-#============================================================
+######################################################################
 # Функции проверки ЭЦП документа, подписанного через Sign Doc
-#============================================================
+######################################################################
 sub doc_sign_is_valid {
   my ($pub_key, $doc) = @_;
 
