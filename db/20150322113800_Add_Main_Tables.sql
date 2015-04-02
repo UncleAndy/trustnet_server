@@ -1,4 +1,5 @@
 CREATE TABLE servers (
+    id bigserial NOT NULL PRIMARY KEY,
     host varchar(128), 
     rating integer,
     t_last_online integer, 
@@ -79,3 +80,18 @@ CREATE INDEX messages_packets_id_idx ON messages (id);
 CREATE INDEX messages_packets_time_idx ON messages (time);
 CREATE INDEX messages_packets_type_idx ON messages (data_type);
 CREATE INDEX messages_to_idx ON messages (receiver, time);
+
+
+CREATE TABLE new_packets (
+    id bigserial NOT NULL PRIMARY KEY,
+    id_packet varchar(90) NOT NULL
+);
+CREATE INDEX new_packets_id_packet_idx ON new_packets (id_packet);
+
+CREATE TABLE packets_sended (
+    id_new_packet bigint NOT NULL,
+    id_server bigint NOT NULL,
+    t_create integer
+};
+ALTER TABLE packets_sended ADD PRIMARY KEY (id_new_packet, id_server);
+CREATE INDEX packets_sended_server_idx ON new_packets (id_server);

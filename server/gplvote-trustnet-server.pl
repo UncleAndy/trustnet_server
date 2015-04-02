@@ -307,6 +307,8 @@ sub to_syslog {
 };
 
 ######################################################################
+# Операции с публичным ключем
+######################################################################
 
 sub is_public_key_exists {
   my ($public_key_id) = @_;
@@ -595,7 +597,6 @@ sub doc_sign_is_valid {
 # TODO: Нотификация о новом пакете - пометка пакета как требуемого для отправки на другие сервера
 sub notify_new_packet {
   my ($packet_id) = @_;
-  
-  
-  
+
+  $dbh->do('INSERT INTO new_packets (id_packet) VALUES (?)', undef, $packet_id);
 };
