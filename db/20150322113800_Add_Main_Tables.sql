@@ -74,7 +74,7 @@ CREATE INDEX tags_sign_pub_key_id_idx ON tags (sign_pub_key_id);
 
 CREATE TABLE messages (
     receiver varchar(48),
-    message text,
+    message text
 ) INHERITS (packets);
 CREATE INDEX messages_packets_id_idx ON messages (id);
 CREATE INDEX messages_packets_time_idx ON messages (time);
