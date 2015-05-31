@@ -131,9 +131,9 @@ while (my $query = new CGI::Fast) {
       $c->finish;
 
       $result->{time} = time();
-      $result->{packet} = {};
-      $result->{packet}->{type} = 'SERVERS';
-      $result->{packet}->{list} = \@servers;
+      $result->{doc} = {};
+      $result->{doc}->{type} = 'SERVERS';
+      $result->{doc}->{list} = \@servers;
     }
     case '/get/public_key' {
       # В параметре id должен содержаться идентификатор публичного ключа
@@ -147,9 +147,9 @@ while (my $query = new CGI::Fast) {
         
         if (defined($public_key) && ($public_key ne '')) {
           $result->{time} = time();
-          $result->{packet} = {};
-          $result->{packet}->{type} = 'PUBLIC_KEY';
-          $result->{packet}->{public_key} = $public_key;
+          $result->{doc} = {};
+          $result->{doc}->{type} = 'PUBLIC_KEY';
+          $result->{doc}->{public_key} = $public_key;
         } else {
           $result->{status} = 404;
           $result->{error} = 'Public key absent on server';
@@ -177,9 +177,9 @@ while (my $query = new CGI::Fast) {
         $c->finish;
         
         $result->{time} = time();
-        $result->{packet} = {};
-        $result->{packet}->{type} = 'LIST_MESSAGES';
-        $result->{packet}->{list} = \@messages;
+        $result->{doc} = {};
+        $result->{doc}->{type} = 'LIST_MESSAGES';
+        $result->{doc}->{list} = \@messages;
       } else {
         $result->{status} = 400;
         $result->{error} = 'Public key ID parameter absent';
@@ -197,12 +197,12 @@ while (my $query = new CGI::Fast) {
 
         if (defined($message) && ($message ne '')) {
           $result->{time} = time();
-          $result->{packet} = {};
-          $result->{packet}->{type} = 'MESSAGE';
-          $result->{packet}->{from} = $message->{sender};
-          $result->{packet}->{to} = $message->{receiver};
-          $result->{packet}->{data} = $message->{message};
-          $result->{packet}->{sign} = $message->{sign};
+          $result->{doc} = {};
+          $result->{doc}->{type} = 'MESSAGE';
+          $result->{doc}->{from} = $message->{sender};
+          $result->{doc}->{to} = $message->{receiver};
+          $result->{doc}->{data} = $message->{message};
+          $result->{doc}->{sign} = $message->{sign};
         } else {
           $result->{status} = 404;
           $result->{error} = 'Message not found';
@@ -214,19 +214,22 @@ while (my $query = new CGI::Fast) {
     }
 
     ######################################################################
-    # Отправка данных с клиента на сервер
+    # Отправка данных с клиента на сервер - один URI для всех типов пакетов
     ######################################################################
-    case '/put/public_key' {
+    case '/put/packet' {
       my $packet = json_from_post($query);
       my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
       
-      if (defined($doc)) {
-        my $public_key_id = calc_pub_key_id($doc->{public_key});
+      if (defined($doc) && $doc->{type} eq 'PUBLIC_KEY') {
+        my $dec_data = js::to_hash($doc->{dec_data});
+      
+        my $public_key = $dec_data->[1];
+        my $public_key_id = calc_pub_key_id($public_key);
         
         # Проверяем наличие данного ключа в базе
         if (!is_public_key_exists($public_key_id)) {
           # Проверяем подпись
-          if (user_sign_is_valid($doc->{public_key}, $packet->{sign}, $doc->{code}, 1)) {
+          if (user_sign_is_valid($public_key, $packet->{sign}, sign_str_for_doc($doc), 1)) {
             insert_public_key($doc, $public_key_id);
           } else {
             $result->{status} = 412;
@@ -237,7 +240,7 @@ while (my $query = new CGI::Fast) {
         };
       } else {
         $result->{status} = 400;
-        $result->{error} = 'Input document absent';
+        $result->{error} = 'Input document absent or unknown type';
       }
     }
     case '/put/attestation' {
@@ -600,3 +603,10 @@ sub notify_new_packet {
 
   $dbh->do('INSERT INTO new_packets (id_packet) VALUES (?)', undef, $packet_id);
 };
+
+sub sign_str_for_doc {
+  my ($doc) = @_;
+  
+  return('') if !defined($doc);
+  return($doc->{site}.":".$doc->{doc_id}.":".$doc->{dec_data}.":".$doc->{template});
+}
