@@ -588,7 +588,7 @@ sub doc_sign_is_valid {
   my ($pub_key, $doc) = @_;
 
   if (defined($pub_key) && ($pub_key ne '')) {
-    my $signed_str = $doc->{site}.":".$doc->{doc_id}.":".$doc->{data}.":".$doc->{template};
+    my $signed_str = $doc->{site}.":".$doc->{doc_id}.":".$doc->{dec_data}.":".$doc->{template};
     
     return(user_sign_is_valid($pub_key, $doc->{sign}, $signed_str, 1));
   } else {
