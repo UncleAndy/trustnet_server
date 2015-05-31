@@ -223,7 +223,7 @@ while (my $query = new CGI::Fast) {
       if (defined($doc) && $doc->{type} eq 'PUBLIC_KEY') {
         my $dec_data = js::to_hash($doc->{dec_data});
       
-        my $public_key = $dec_data->[1];
+        my $public_key = $dec_data->[2];
         my $public_key_id = calc_pub_key_id($public_key);
         
         # Проверяем наличие данного ключа в базе
