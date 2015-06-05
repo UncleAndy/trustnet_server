@@ -234,7 +234,7 @@ while (my $query = new CGI::Fast) {
           if (!is_public_key_exists($public_key_id)) {
             # Проверяем подпись
             if (user_sign_is_valid($public_key, $packet->{sign}, sign_str_for_doc($doc), 1)) {
-              insert_public_key($doc, $public_key_id);
+              insert_public_key($doc, $packet->{sign}, $public_key_id);
             } else {
               $result->{status} = 412;
               $result->{error} = 'Sign is bad';
@@ -415,20 +415,24 @@ sub add_packet_from_app {
 };
 
 sub insert_public_key {
-  my ($doc, $public_key_id) = @_;
+  my ($doc, $sign, $public_key_id) = @_;
   
   # Вычисляем идентификатор пакета
   my $packet_id = packet_id($doc);
   
   # Ищем такой пакет в базе
   if (!is_packet_exists($packet_id, 'public_keys')) {
-    $dbh->do('INSERT INTO public_keys (id, time, path, doc, doc_type, public_key, public_key_id) VALUES (?, ?, ?, ?, ?, ?, ?)', undef, 
+    my $data = js::to_hash($doc->data);
+    
+    $dbh->do('INSERT INTO public_keys (id, time, path, doc, doc_type, public_key, public_key_id, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef, 
       $packet_id, 
       time(), 
       $cfg->{site}, 
       js::from_hash($doc),
       'PUBLIC_KEY',
-      $doc->{public_key},
+      $data->[2],
+      $public_key_id,
+      $sign, 
       $public_key_id);
     if (!$dbh->err) {
       notify_new_packet($packet_id);
