@@ -262,7 +262,7 @@ while (my $query = new CGI::Fast) {
             my $sign_public_key = get_public_key_by_id($sign_pub_key_id);
             
             # Проверяем подпись
-            if (defined($sign_public_key) && ($sign_public_key != '')) {
+            if (defined($sign_public_key) && ($sign_public_key ne '')) {
               if (user_sign_is_valid($sign_public_key, $sign, sign_str_for_doc($doc), 1)) {
                 insert_attestation($doc, $sign, $sign_pub_key_id);
               } else {
@@ -352,6 +352,8 @@ sub to_syslog {
 
 sub is_public_key_exists {
   my ($public_key_id) = @_;
+  
+  $public_key_id =~ s/\=+$//g;
   
   # Проверяем наличие данного ключа в базе
   my $c = $dbh->prepare('SELECT id FROM public_keys WHERE public_key_id = ?');
