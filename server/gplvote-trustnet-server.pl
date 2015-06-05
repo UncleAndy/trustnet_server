@@ -262,17 +262,18 @@ while (my $query = new CGI::Fast) {
             my $sign_public_key = get_public_key_by_id($sign_pub_key_id);
             
             # Проверяем подпись
-            if (user_sign_is_valid($sign_public_key, $sign, sign_str_for_doc($doc), 1)) {
-              insert_attestation($doc, $sign, $sign_pub_key_id);
+            if (defined($sign_public_key) && ($sign_public_key != '')) {
+              if (user_sign_is_valid($sign_public_key, $sign, sign_str_for_doc($doc), 1)) {
+                insert_attestation($doc, $sign, $sign_pub_key_id);
+              } else {
+                $result->{status} = 412;
+                $result->{error} = 'Sign is bad';
+              };
             } else {
-              $result->{status} = 412;
-              $result->{error} = 'Sign is bad';
+              $result->{status} = 400;
+              $result->{error} = 'Public key ID parameter absent';
             };
           };
-        } elsif (defined($doc) && $doc->{type} eq 'TRUST') {
-          
-          
-          
         } else {
           $result->{status} = 400;
           $result->{error} = 'Input document has unknown type';
