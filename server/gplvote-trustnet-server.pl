@@ -422,7 +422,7 @@ sub insert_public_key {
   
   # Ищем такой пакет в базе
   if (!is_packet_exists($packet_id, 'public_keys')) {
-    my $data = js::to_hash($doc->data);
+    my $data = js::to_hash($doc->{dec_data});
     
     $dbh->do('INSERT INTO public_keys (id, time, path, doc, doc_type, public_key, public_key_id, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef, 
       $packet_id, 
@@ -450,7 +450,7 @@ sub insert_attestation {
   my $packet_id = packet_id($doc);
   
   if (!is_packet_exists($packet_id, 'attestations')) {
-    my $data = js::to_hash($doc->data);
+    my $data = js::to_hash($doc->{dec_data});
     
     if (defined($data) && ($data ne '')) {
       my $person_id = $data->[2];
@@ -486,7 +486,7 @@ sub insert_trust {
   my $packet_id = packet_id($doc);
   
   if (!is_packet_exists($packet_id, 'trusts')) {
-    my $data = js::to_hash($doc->data);
+    my $data = js::to_hash($doc->{dec_data});
     
     if (defined($data) && ($data ne '')) {
       my $person_id = $data->[2];
@@ -520,7 +520,7 @@ sub insert_tag {
   my $packet_id = packet_id($doc);
   
   if (!is_packet_exists($packet_id, 'tags')) {
-    my $data = js::to_hash($doc->data);
+    my $data = js::to_hash($doc->{dec_data});
     
     if (defined($data) && ($data ne '')) {
       my $tag_id = $data->[2];
@@ -558,7 +558,7 @@ sub insert_message {
   my $packet_id = packet_id($doc);
   
   if (!is_packet_exists($packet_id, 'tags')) {
-    my $data = js::to_hash($doc->data);
+    my $data = js::to_hash($doc->{dec_data});
     
     if (defined($data) && ($data ne '')) {
       my $receiver = $data->[2];
