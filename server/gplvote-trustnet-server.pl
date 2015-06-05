@@ -603,15 +603,15 @@ sub is_packet_exists {
 sub _stringify {
   my ($v) = @_;
   
-  if (ref($v) eq 'SCALAR') {
-    return('"'.$v.'"');
+  if ((ref($v) eq '') || (ref($v) eq 'SCALAR')) {
+    return($v);
   } elsif (ref($v) eq 'ARRAY') {
     return('['.join(',', map { _stringify($_) } @{$v}).']');
   } elsif (ref($v) eq 'HASH') {
     my $s = '';
     my $sep = '';
     foreach my $key (sort(keys(%{$v}))) {
-      $s .= $sep.'"'.$key.'":"'._stringify($v->{$key});
+      $s .= $sep.'"'.$key.'":"'._stringify($v->{$key}).'"';
       $sep = ';';
     }
     return('{'.$s.'}');
