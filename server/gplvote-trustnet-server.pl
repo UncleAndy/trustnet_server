@@ -365,6 +365,8 @@ sub is_public_key_exists {
 sub get_public_key_by_id {
   my ($public_key_id) = @_;
   
+  $public_key_id =~ s/\=+$//g;
+  
   # Проверяем наличие данного ключа в базе
   my $c = $dbh->prepare('SELECT public_key FROM public_keys WHERE public_key_id = ?');
   $c->execute($public_key_id);
