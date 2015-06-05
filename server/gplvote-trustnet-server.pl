@@ -220,27 +220,63 @@ while (my $query = new CGI::Fast) {
       my $packet = json_from_post($query);
       my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
       
-      if (defined($doc) && $doc->{type} eq 'PUBLIC_KEY') {
-        my $dec_data = js::to_hash($doc->{dec_data});
-      
-        my $public_key = $dec_data->[2];
-        my $public_key_id = calc_pub_key_id($public_key);
-        
-        # Проверяем наличие данного ключа в базе
-        if (!is_public_key_exists($public_key_id)) {
-          # Проверяем подпись
-          if (user_sign_is_valid($public_key, $packet->{sign}, sign_str_for_doc($doc), 1)) {
-            insert_public_key($doc, $public_key_id);
-          } else {
-            $result->{status} = 412;
-            $result->{error} = 'Sign is bad';
-          };
-        } else {
-          $result->{status} = 202;
-        };
-      } else {
+      if (!defined($doc)) {
         $result->{status} = 400;
-        $result->{error} = 'Input document absent or unknown type';
+        $result->{error} = 'Input document absent';
+      } else {
+        if (defined($doc) && $doc->{type} eq 'PUBLIC_KEY') {
+          my $dec_data = js::to_hash($doc->{dec_data});
+        
+          my $public_key = $dec_data->[2];
+          my $public_key_id = calc_pub_key_id($public_key);
+          
+          # Проверяем наличие данного ключа в базе
+          if (!is_public_key_exists($public_key_id)) {
+            # Проверяем подпись
+            if (user_sign_is_valid($public_key, $packet->{sign}, sign_str_for_doc($doc), 1)) {
+              insert_public_key($doc, $public_key_id);
+            } else {
+              $result->{status} = 412;
+              $result->{error} = 'Sign is bad';
+            };
+          } else {
+            $result->{status} = 202;
+          };
+        } elsif (defined($doc) && $doc->{type} eq 'ATTESTATION') {
+          if (is_packet_exists($doc)) {
+            $result->{status} = 202;
+          } else {
+            my $dec_data = js::to_hash($doc->{dec_data});
+
+            # Данные атестата
+            my $att_personal_id = $dec_data->[2];
+            my $att_public_key_id = $dec_data->[3];
+            my $att_level = $dec_data->[4];
+            
+            # Данные подписи
+            my $sign = $packet->{sign};
+            my $sign_pub_key_id = $packet->{sign_pub_key_id};
+            my $sign_personal_id = $packet->{sign_personal_id};
+            
+            # Извлекаем публичный ключ из базы
+            my $sign_public_key = get_public_key_by_id($sign_pub_key_id);
+            
+            # Проверяем подпись
+            if (user_sign_is_valid($sign_public_key, $sign, sign_str_for_doc($doc), 1)) {
+              insert_attestation($doc, $sign, $sign_pub_key_id);
+            } else {
+              $result->{status} = 412;
+              $result->{error} = 'Sign is bad';
+            };
+          };
+        } elsif (defined($doc) && $doc->{type} eq 'TRUST') {
+          
+          
+          
+        } else {
+          $result->{status} = 400;
+          $result->{error} = 'Input document has unknown type';
+        }
       }
     }
     case '/put/attestation' {
@@ -337,6 +373,19 @@ sub get_public_key_by_id {
   return($public_key);
 }
 
+sub is_packet_exists {
+  my ($doc) = @_;
+  
+  my $packet_id = packet_id($doc);
+
+  my $c = $dbh->prepare("SELECT id FROM packets WHERE id = ?");
+  $c->execute($packet_id);
+  my ($exists_id) = $c->fetchrow_array();
+  $c->finish();
+  
+  return(defined($exists_id) && ($exists_id ne ''));
+}
+
 ######################################################################
 # Обработка входящих документов (от приложения)
 ######################################################################
@@ -410,9 +459,9 @@ sub insert_attestation {
     my $data = js::to_hash($doc->data);
     
     if (defined($data) && ($data ne '')) {
-      my $person_id = $data->[0];
-      my $public_key_id = $data->[1];
-      my $level = $data->[2];
+      my $person_id = $data->[2];
+      my $public_key_id = $data->[3];
+      my $level = $data->[4];
       
       $dbh->do('INSERT INTO attestations (id, time, path, doc, doc_type, person_id, public_key_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
@@ -446,8 +495,8 @@ sub insert_trust {
     my $data = js::to_hash($doc->data);
     
     if (defined($data) && ($data ne '')) {
-      my $person_id = $data->[0];
-      my $level = $data->[1];
+      my $person_id = $data->[2];
+      my $level = $data->[3];
       
       $dbh->do('INSERT INTO trusts (id, time, path, doc, doc_type, person_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
@@ -480,10 +529,10 @@ sub insert_tag {
     my $data = js::to_hash($doc->data);
     
     if (defined($data) && ($data ne '')) {
-      my $tag_id = $data->[0];
-      my $person_id = $data->[1];
-      my $tag_data = $data->[2];
-      my $level = $data->[3];
+      my $tag_id = $data->[2];
+      my $person_id = $data->[3];
+      my $tag_data = $data->[4];
+      my $level = $data->[5];
       
       $dbh->do('INSERT INTO tags (id, time, path, doc, doc_type, tag_uuid, person_id, tag_data, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
@@ -518,8 +567,8 @@ sub insert_message {
     my $data = js::to_hash($doc->data);
     
     if (defined($data) && ($data ne '')) {
-      my $receiver = $data->[0];
-      my $message = $data->[1];
+      my $receiver = $data->[2];
+      my $message = $data->[3];
       
       $dbh->do('INSERT INTO tags (id, time, path, doc, doc_type, receiver, message, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
