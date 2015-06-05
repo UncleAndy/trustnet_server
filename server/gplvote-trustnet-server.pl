@@ -243,7 +243,7 @@ while (my $query = new CGI::Fast) {
             $result->{status} = 202;
           };
         } elsif (defined($doc) && $doc->{type} eq 'ATTESTATION') {
-          if (is_packet_exists($doc)) {
+          if (is_packet_exists(packet_id($doc), 'attestations')) {
             $result->{status} = 202;
           } else {
             my $dec_data = js::to_hash($doc->{dec_data});
@@ -371,19 +371,6 @@ sub get_public_key_by_id {
   $c->finish;
   
   return($public_key);
-}
-
-sub is_packet_exists {
-  my ($doc) = @_;
-  
-  my $packet_id = packet_id($doc);
-
-  my $c = $dbh->prepare("SELECT id FROM packets WHERE id = ?");
-  $c->execute($packet_id);
-  my ($exists_id) = $c->fetchrow_array();
-  $c->finish();
-  
-  return(defined($exists_id) && ($exists_id ne ''));
 }
 
 ######################################################################
