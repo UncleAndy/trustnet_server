@@ -62,7 +62,7 @@ use Encode qw(encode decode_utf8);
 use GPLVote::SignDoc::Client;
 #no warnings;
 
-use vars qw($cfg $dbh);
+use vars qw($cfg $dbh $packet_types);
 
 # Получение конфига из блока BEGIN
 $cfg = _get_config();
@@ -80,6 +80,12 @@ Sys::Syslog::setlogsock('unix');
 openlog($cfg->{product_name},'ndelay,pid', 'LOG_LOCAL6');
 
 to_syslog("Start...");
+
+$packet_types = {
+  'ATTESTATION' => { table => 'attestations',   insert_func => \&insert_attestation },
+  'TRUST'       => { table => 'trusts',         insert_func => \&insert_trust },
+  'TAG'         => { table => 'tags',           insert_func => \&insert_tag },
+};
 
 $ENV{PM_MAX_REQUESTS} = $cfg->{fcgi}->{max_requests};
 
@@ -242,63 +248,15 @@ while (my $query = new CGI::Fast) {
           } else {
             $result->{status} = 202;
           };
-        } elsif (defined($doc) && $doc->{type} eq 'ATTESTATION') {
-          if (is_packet_exists(packet_id($doc), 'attestations')) {
-            $result->{status} = 202;
-          } else {
-            my $dec_data = js::to_hash($doc->{dec_data});
-
-            # Данные атестата
-            my $att_personal_id = $dec_data->[2];
-            my $att_public_key_id = $dec_data->[3];
-            my $att_level = $dec_data->[4];
-            
-            # Данные подписи
-            my $sign = $packet->{sign};
-            my $sign_pub_key_id = $packet->{sign_pub_key_id};
-            my $sign_personal_id = $packet->{sign_personal_id};
-            
-            # Извлекаем публичный ключ из базы
-            my $sign_public_key = get_public_key_by_id($sign_pub_key_id);
-            
-            # Проверяем подпись
-            if (defined($sign_public_key) && ($sign_public_key ne '')) {
-              if (user_sign_is_valid($sign_public_key, $sign, sign_str_for_doc($doc), 1)) {
-                insert_attestation($doc, $sign, $sign_pub_key_id);
-              } else {
-                $result->{status} = 412;
-                $result->{error} = 'Sign is bad';
-              };
-            } else {
-              $result->{status} = 400;
-              $result->{error} = 'Public key ID parameter absent';
-            };
-          };
+        } elsif (defined($doc) && defined($packet_types->{$doc->{type}})) {
+          # Общая процедура обработки и добавления пакетов типа ATTESTATE, TRUST и TAG
+          my $packet_type = $packet_types->{$doc->{type}};
+          $result = add_packet_from_app($packet_type->{insert_func}, $packet, $packet_type->{table}, $result);
         } else {
           $result->{status} = 400;
           $result->{error} = 'Input document has unknown type';
         }
       }
-    }
-    case '/put/attestation' {
-      my $packet = json_from_post($query);
-      
-      $result = add_packet_from_app(\&insert_attestation, $packet, 'attestations', $result);
-    }
-    case '/put/trust' {
-      my $packet = json_from_post($query);
-      
-      $result = add_packet_from_app(\&insert_trust, $packet, 'trusts', $result);
-    }
-    case '/put/tag' {
-      my $packet = json_from_post($query);
-      
-      $result = add_packet_from_app(\&insert_tag, $packet, 'tags', $result);
-    }
-    case '/put/message' {
-      my $packet = json_from_post($query);
-      
-      $result = add_packet_from_app(\&insert_message, $packet, 'messages', $result);
     }
 
 
@@ -425,21 +383,30 @@ sub insert_public_key {
   # Ищем такой пакет в базе
   if (!is_packet_exists($packet_id, 'public_keys')) {
     my $data = js::to_hash($doc->{dec_data});
-    
-    $dbh->do('INSERT INTO public_keys (id, time, path, doc, doc_type, public_key, public_key_id, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef, 
-      $packet_id, 
-      time(), 
-      $cfg->{site}, 
-      js::from_hash($doc),
-      'PUBLIC_KEY',
-      $data->[2],
-      $public_key_id,
-      $sign, 
-      $public_key_id);
-    if (!$dbh->err) {
-      notify_new_packet($packet_id);
-    } else {
-      to_syslog('DB ERROR: '.$dbh->errstr);
+
+    if (defined($data) && ($data ne '')) {
+      # Для идентификатора контента используются:
+      # Персональный идентификатор автора документа
+      # Идентификатор ключа подписания автора документа
+      # Публичный ключ
+      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$data->[2]);
+      
+      $dbh->do('INSERT INTO public_keys (id, content_id, time, path, doc, doc_type, public_key, public_key_id, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef, 
+        $packet_id, 
+        $content_id,
+        time(), 
+        $cfg->{site}, 
+        js::from_hash($doc),
+        'PUBLIC_KEY',
+        $data->[2],
+        $public_key_id,
+        $sign, 
+        $public_key_id);
+      if (!$dbh->err) {
+        notify_new_packet($packet_id);
+      } else {
+        to_syslog('DB ERROR: '.$dbh->errstr);
+      };
     };
   } else {
     to_syslog('LOGIC ERROR: Packets IDs DUP!!! For '.Dumper($doc));
@@ -458,9 +425,17 @@ sub insert_attestation {
       my $person_id = $data->[2];
       my $public_key_id = $data->[3];
       my $level = $data->[4];
+    
+      # Для идентификатора контента используются:
+      # Персональный идентификатор автора документа
+      # Идентификатор ключа подписания автора документа
+      # Персональный идентификатор заверяемого
+      # Идентификатор ключа заверяемого
+      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$person_id.':'.$public_key_id);
       
-      $dbh->do('INSERT INTO attestations (id, time, path, doc, doc_type, person_id, public_key_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+      $dbh->do('INSERT INTO attestations (id, content_id, time, path, doc, doc_type, person_id, public_key_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
+        $content_id,
         time(), 
         $cfg->{site}, 
         js::from_hash($doc),
@@ -493,9 +468,16 @@ sub insert_trust {
     if (defined($data) && ($data ne '')) {
       my $person_id = $data->[2];
       my $level = $data->[3];
+    
+      # Для идентификатора контента используются:
+      # Персональный идентификатор автора документа
+      # Идентификатор ключа подписания автора документа
+      # Персональный идентификатор заверяемого
+      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$person_id);
       
-      $dbh->do('INSERT INTO trusts (id, time, path, doc, doc_type, person_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+      $dbh->do('INSERT INTO trusts (id, content_id, time, path, doc, doc_type, person_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
+        $content_id,
         time(), 
         $cfg->{site}, 
         js::from_hash($doc),
@@ -523,15 +505,23 @@ sub insert_tag {
   
   if (!is_packet_exists($packet_id, 'tags')) {
     my $data = js::to_hash($doc->{dec_data});
-    
+
     if (defined($data) && ($data ne '')) {
       my $tag_id = $data->[2];
       my $person_id = $data->[3];
       my $tag_data = $data->[4];
       my $level = $data->[5];
+
+      # Для идентификатора контента используются:
+      # Персональный идентификатор автора документа
+      # Идентификатор ключа подписания автора документа
+      # Идентификатор тэга
+      # Привязываемый персональный идентификатор
+      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$data->[2].':'.$data->[3]);
       
-      $dbh->do('INSERT INTO tags (id, time, path, doc, doc_type, tag_uuid, person_id, tag_data, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+      $dbh->do('INSERT INTO tags (id, content_id, time, path, doc, doc_type, tag_uuid, person_id, tag_data, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
+        $content_id,
         time(), 
         $cfg->{site}, 
         js::from_hash($doc),
@@ -565,9 +555,17 @@ sub insert_message {
     if (defined($data) && ($data ne '')) {
       my $receiver = $data->[2];
       my $message = $data->[3];
+
+      # Для идентификатора контента используются:
+      # Персональный идентификатор автора документа
+      # Идентификатор ключа подписания автора документа
+      # Идентификатор ключа получателя
+      # Зашифрованный текст сообщения
+      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$receiver.':'.$message);
       
-      $dbh->do('INSERT INTO tags (id, time, path, doc, doc_type, receiver, message, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
-        $packet_id, 
+      $dbh->do('INSERT INTO tags (id, content_id, time, path, doc, doc_type, receiver, message, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+        $packet_id,
+        $content_id,
         time(), 
         $cfg->{site}, 
         js::from_hash($doc),
@@ -594,6 +592,12 @@ sub packet_id {
   my ($doc) = @_;
   
   return(sha512_base64(_stringify($doc)));
+};
+
+sub content_id {
+  my ($str) = @_;
+  
+  return(sha512_base64($str));
 };
 
 sub is_packet_exists {
@@ -633,8 +637,7 @@ sub doc_sign_is_valid {
   my ($pub_key, $doc) = @_;
 
   if (defined($pub_key) && ($pub_key ne '')) {
-    my $signed_str = $doc->{site}.":".$doc->{doc_id}.":".$doc->{dec_data}.":".$doc->{template};
-    
+    my $signed_str = sign_str_for_doc($doc);
     return(user_sign_is_valid($pub_key, $doc->{sign}, $signed_str, 1));
   } else {
     return(undef);
