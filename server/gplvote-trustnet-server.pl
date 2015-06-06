@@ -350,9 +350,9 @@ sub add_packet_from_app {
     my $packet_id = packet_id($doc);
     if (!is_packet_exists($packet_id, $table)) {
       # Проверяем наличие в базе ключа из подписи
-      if (is_public_key_exists($packet->{sign_pub_key_id})) {
+      my $public_key = get_public_key_by_id($packet->{sign_pub_key_id});
+      if (defined($public_key) && ($public_key ne '')) {
         # Проверяем подпись
-        my $public_key = get_public_key_by_id($packet->{sign_pub_key_id});
         if (doc_sign_is_valid($public_key, $doc)) {
           $insert_func->($doc, $packet->{sign}, $packet->{sign_pub_key_id});
         } else {
