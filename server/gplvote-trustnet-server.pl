@@ -375,7 +375,7 @@ sub add_packet_from_app {
 };
 
 sub insert_public_key {
-  my ($doc, $sign, $public_key_id) = @_;
+  my ($doc, $sign, $sign_pub_key_id) = @_;
   
   # Вычисляем идентификатор пакета
   my $packet_id = packet_id($doc);
@@ -389,7 +389,7 @@ sub insert_public_key {
       # Персональный идентификатор автора документа
       # Идентификатор ключа подписания автора документа
       # Публичный ключ
-      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$data->[2]);
+      my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$data->[2]);
       
       $dbh->do('INSERT INTO public_keys (id, content_id, time, path, doc, doc_type, public_key, public_key_id, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef, 
         $packet_id, 
@@ -399,9 +399,9 @@ sub insert_public_key {
         js::from_hash($doc),
         'PUBLIC_KEY',
         $data->[2],
-        $public_key_id,
+        $sign_pub_key_id,
         $sign, 
-        $public_key_id);
+        $sign_pub_key_id);
       if (!$dbh->err) {
         notify_new_packet($packet_id);
       } else {
@@ -431,7 +431,7 @@ sub insert_attestation {
       # Идентификатор ключа подписания автора документа
       # Персональный идентификатор заверяемого
       # Идентификатор ключа заверяемого
-      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$person_id.':'.$public_key_id);
+      my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$person_id.':'.$public_key_id);
       
       $dbh->do('INSERT INTO attestations (id, content_id, time, path, doc, doc_type, person_id, public_key_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
@@ -473,7 +473,7 @@ sub insert_trust {
       # Персональный идентификатор автора документа
       # Идентификатор ключа подписания автора документа
       # Персональный идентификатор заверяемого
-      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$person_id);
+      my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$person_id);
       
       $dbh->do('INSERT INTO trusts (id, content_id, time, path, doc, doc_type, person_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
@@ -517,7 +517,7 @@ sub insert_tag {
       # Идентификатор ключа подписания автора документа
       # Идентификатор тэга
       # Привязываемый персональный идентификатор
-      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$data->[2].':'.$data->[3]);
+      my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$data->[2].':'.$data->[3]);
       
       $dbh->do('INSERT INTO tags (id, content_id, time, path, doc, doc_type, tag_uuid, person_id, tag_data, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
@@ -561,7 +561,7 @@ sub insert_message {
       # Идентификатор ключа подписания автора документа
       # Идентификатор ключа получателя
       # Зашифрованный текст сообщения
-      my $content_id = content_id($data->[0].':'.$public_key_id.':'.$receiver.':'.$message);
+      my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$receiver.':'.$message);
       
       $dbh->do('INSERT INTO tags (id, content_id, time, path, doc, doc_type, receiver, message, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id,
