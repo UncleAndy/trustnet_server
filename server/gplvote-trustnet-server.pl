@@ -353,7 +353,7 @@ sub add_packet_from_app {
       my $public_key = get_public_key_by_id($packet->{sign_pub_key_id});
       if (defined($public_key) && ($public_key ne '')) {
         # Проверяем подпись
-        if (doc_sign_is_valid($public_key, $doc)) {
+        if (doc_sign_is_valid($public_key, $doc, $packet->{sign})) {
           $insert_func->($doc, $packet->{sign}, $packet->{sign_pub_key_id});
         } else {
           $result->{status} = 412;
@@ -634,11 +634,11 @@ sub _stringify {
 # Функции проверки ЭЦП документа, подписанного через Sign Doc
 ######################################################################
 sub doc_sign_is_valid {
-  my ($pub_key, $doc) = @_;
+  my ($pub_key, $doc, $sign) = @_;
 
   if (defined($pub_key) && ($pub_key ne '')) {
     my $signed_str = sign_str_for_doc($doc);
-    return(user_sign_is_valid($pub_key, $doc->{sign}, $signed_str, 1));
+    return(user_sign_is_valid($pub_key, $sign, $signed_str, 1));
   } else {
     return(undef);
   }
