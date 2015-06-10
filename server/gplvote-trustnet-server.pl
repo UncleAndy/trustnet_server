@@ -650,7 +650,7 @@ sub pow_level {
   my $bcrypt = Digest->new('Bcrypt');
   $bcrypt->cost(8);
   $bcrypt->salt(prepare_bcrypt_salt($pow_nonce));
-  $digest = $bcrypt->digest;
+  my $digest = $bcrypt->digest;
   
   my $level = 0;
   my $i = 0;
