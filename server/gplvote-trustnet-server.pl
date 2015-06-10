@@ -252,6 +252,18 @@ while (my $query = new CGI::Fast) {
           # Общая процедура обработки и добавления пакетов типа ATTESTATE, TRUST и TAG
           my $packet_type = $packet_types->{$doc->{type}};
           $result = add_packet_from_app($packet_type->{insert_func}, $packet, $packet_type->{table}, $result);
+        } elsif (defined($doc) && $doc->{type} eq 'MESSAGE') {
+          my $string_for_pow = $doc->{doc_id}.':'.$doc->{dec_data}.':'.$doc->{template};
+        
+          # Проверяем pow пакета
+          
+          if (pow_level($packet->{pow_nonce}, $string_for_pow) >= 4) {
+            # Сохраняем пакет в базе
+            $result = add_packet_from_app(\&insert_message, $packet, 'messages', $result);
+          } else {
+              $result->{status} = 412;
+              $result->{error} = 'PoW is bad';
+          };
         } else {
           $result->{status} = 400;
           $result->{error} = 'Input document has unknown type';
@@ -341,7 +353,7 @@ sub get_public_key_by_id {
 ######################################################################
 
 sub add_packet_from_app {
-  my ($insert_func, $packet, $table, $result) = @_;
+  my ($insert_func, $packet, $table, $result, $pow_nonce) = @_;
   
   my $doc = $packet->{doc} if defined($packet) && ($packet ne '');
   
@@ -354,7 +366,7 @@ sub add_packet_from_app {
       if (defined($public_key) && ($public_key ne '')) {
         # Проверяем подпись
         if (doc_sign_is_valid($public_key, $doc, $packet->{sign})) {
-          $insert_func->($doc, $packet->{sign}, $packet->{sign_pub_key_id});
+          $insert_func->($doc, $packet->{sign}, $packet->{sign_pub_key_id}, $pow_nonce);
         } else {
           $result->{status} = 412;
           $result->{error} = 'Sign is bad';
@@ -545,11 +557,11 @@ sub insert_tag {
 };
 
 sub insert_message {
-  my ($doc, $sign, $sign_pub_key_id) = @_;
+  my ($doc, $sign, $sign_pub_key_id, $pow_nonce) = @_;
   
   my $packet_id = packet_id($doc);
   
-  if (!is_packet_exists($packet_id, 'tags')) {
+  if (!is_packet_exists($packet_id, 'messages')) {
     my $data = js::to_hash($doc->{dec_data});
     
     if (defined($data) && ($data ne '')) {
@@ -557,13 +569,9 @@ sub insert_message {
       my $message = $data->[3];
 
       # Для идентификатора контента используются:
-      # Персональный идентификатор автора документа
-      # Идентификатор ключа подписания автора документа
-      # Идентификатор ключа получателя
-      # Зашифрованный текст сообщения
       my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$receiver.':'.$message);
       
-      $dbh->do('INSERT INTO tags (id, content_id, time, path, doc, doc_type, receiver, message, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+      $dbh->do('INSERT INTO messages (id, content_id, time, path, doc, doc_type, receiver, message, sign, sign_pub_key_id, pow_nonce) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id,
         $content_id,
         time(), 
@@ -573,7 +581,8 @@ sub insert_message {
         $receiver,
         $message,
         $sign,
-        $sign_pub_key_id
+        $sign_pub_key_id,
+        $pow_nonce
         );
       if (!$dbh->err) {
         notify_new_packet($packet_id);
@@ -629,6 +638,54 @@ sub _stringify {
     return('{'.$s.'}');
   }
 };
+
+######################################################################
+# Проверка PoW
+######################################################################
+
+# Определяем и возвращаем количество нулевых стартовых бит в хэше
+sub pow_level {
+  my ($pow_nonce, $string_for_pow) = @_;
+  
+  my $bcrypt = Digest->new('Bcrypt');
+  $bcrypt->cost(8);
+  $bcrypt->salt(prepare_bcrypt_salt($pow_nonce));
+  $digest = $bcrypt->digest;
+  
+  my $level = 0;
+  my $i = 0;
+  while ($i < length($digest)) {
+    my $byte = substr($digest, $i, 1);
+    
+    my $mask = 128;
+    while ($mask > 0) {
+      if ($byte & $mask == 0) {
+        $level++;
+      } else {
+        return($level);
+      };
+      $mask = $mask >> 1;
+    };
+    
+    $i++;
+  };
+  
+  return($level);
+};
+
+# Big endian 16 bytes returned
+sub prepare_bcrypt_salt {
+  my ($pow_nonce) = @_;
+
+  # Если после конвертации размер соли меньше 16 байт - дополняем слева нулевыми байтами до нужнгого размера
+  my $salt = pack("N", $pow_nonce);
+  if (length($salt) < 16) {
+    $salt = ("\x00" x (16 - length($salt))).$salt;
+  };
+  
+  return($salt);
+}
+
 
 ######################################################################
 # Функции проверки ЭЦП документа, подписанного через Sign Doc
