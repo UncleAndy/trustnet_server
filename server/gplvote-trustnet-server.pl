@@ -260,7 +260,7 @@ while (my $query = new CGI::Fast) {
           
           if (pow_level($packet->{pow_nonce}, $string_for_pow) >= 4) {
             # Сохраняем пакет в базе
-            $result = add_packet_from_app(\&insert_message, $packet, 'messages', $result);
+            $result = add_packet_from_app(\&insert_message, $packet, 'messages', $result, $packet->{pow_nonce});
           } else {
               $result->{status} = 412;
               $result->{error} = 'PoW is bad';
@@ -366,7 +366,7 @@ sub add_packet_from_app {
       my $public_key = get_public_key_by_id($packet->{sign_pub_key_id});
       if (defined($public_key) && ($public_key ne '')) {
         # Проверяем подпись
-        if (doc_sign_is_valid($public_key, $doc, $packet->{sign})) {
+        if ((defined($pow_nonce) && ($pow_nonce ne '')) || doc_sign_is_valid($public_key, $doc, $packet->{sign})) {
           $insert_func->($doc, $packet->{sign}, $packet->{sign_pub_key_id}, $pow_nonce);
         } else {
           $result->{status} = 412;
@@ -651,6 +651,7 @@ sub pow_level {
   my $bcrypt = Digest::Bcrypt->new();
   $bcrypt->cost(8);
   $bcrypt->salt(prepare_bcrypt_salt($pow_nonce));
+  $bcrypt->add($string_for_pow);
   my $digest = $bcrypt->digest;
   
   my $level = 0;
@@ -660,7 +661,7 @@ sub pow_level {
     
     my $mask = 128;
     while ($mask > 0) {
-      if ($byte & $mask == 0) {
+      if (!(ord($byte) & $mask)) {
         $level++;
       } else {
         return($level);
