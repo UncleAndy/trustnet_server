@@ -566,8 +566,8 @@ sub insert_message {
     my $data = js::to_hash($doc->{dec_data});
     
     if (defined($data) && ($data ne '')) {
-      my $receiver = $data->[2];
-      my $message = $data->[3];
+      my $receiver = $data->[1];
+      my $message = $data->[2];
 
       # Для идентификатора контента используются:
       my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$receiver.':'.$message);
