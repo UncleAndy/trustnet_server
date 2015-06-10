@@ -51,6 +51,7 @@ use Time::HiRes qw(usleep);
 use Switch;
 use DBI;
 use Digest::SHA qw(sha256_base64 sha512_base64);
+use Digest::Bcrypt;
 use Crypt::OpenSSL::RSA;
 use MIME::Base64 qw(encode_base64);
 use LWP::UserAgent;
@@ -647,7 +648,7 @@ sub _stringify {
 sub pow_level {
   my ($pow_nonce, $string_for_pow) = @_;
   
-  my $bcrypt = Digest->new('Bcrypt');
+  my $bcrypt = Digest::Bcrypt->new();
   $bcrypt->cost(8);
   $bcrypt->salt(prepare_bcrypt_salt($pow_nonce));
   my $digest = $bcrypt->digest;
