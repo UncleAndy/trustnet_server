@@ -146,6 +146,8 @@ while (my $query = new CGI::Fast) {
       # В параметре id должен содержаться идентификатор публичного ключа
       my $id = $query->param('id');
       
+      $id =~ s/\=+$//g;
+      
       if (defined($id) && ($id ne '')) {
         my $c = $dbh->prepare('SELECT public_key FROM public_keys WHERE public_key_id = ?');
         $c->execute($id);
