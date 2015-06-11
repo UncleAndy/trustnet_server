@@ -172,6 +172,7 @@ while (my $query = new CGI::Fast) {
       my $id = $query->param('id');
       my $count = $query->param('c');
       $count = $cfg->{trust_net}->{messages_list_size} if !defined($count) || ($count eq '');
+      $count = 1000 if !defined($count) || ($count eq '');
       
       if (defined($id) && ($id ne '')) {
         my @messages;
@@ -199,7 +200,7 @@ while (my $query = new CGI::Fast) {
       if (defined($id) && ($id ne '')) {
         my $c = $dbh->prepare('SELECT doc, sign_pub_key_id, sign FROM messages WHERE id = ?');
         $c->execute($id);
-        my $message = $c->fetchrow_array();
+        my $message = $c->fetchrow_hashref();
         $c->finish;
 
         if (defined($message) && ($message ne '')) {
