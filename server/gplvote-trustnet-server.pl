@@ -197,19 +197,17 @@ while (my $query = new CGI::Fast) {
       my $id = $query->param('id');
       
       if (defined($id) && ($id ne '')) {
-        my $c = $dbh->prepare('SELECT sender, message, sign FROM messages WHERE id = ?');
+        my $c = $dbh->prepare('SELECT doc, sign_pub_key_id, sign FROM messages WHERE id = ?');
         $c->execute($id);
         my $message = $c->fetchrow_array();
         $c->finish;
 
         if (defined($message) && ($message ne '')) {
           $result->{time} = time();
-          $result->{doc} = {};
-          $result->{doc}->{type} = 'MESSAGE';
-          $result->{doc}->{from} = $message->{sender};
-          $result->{doc}->{to} = $message->{receiver};
-          $result->{doc}->{data} = $message->{message};
-          $result->{doc}->{sign} = $message->{sign};
+          $result->{doc} = js::to_hash($message->{doc});
+          $result->{sign_pub_key_id} = $message->{sign_pub_key_id};
+          $result->{sign} = $message->{sign};
+          $result->{pow_nonce} = $message->{pow_nonce};
         } else {
           $result->{status} = 404;
           $result->{error} = 'Message not found';
