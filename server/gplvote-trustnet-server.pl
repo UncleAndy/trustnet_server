@@ -169,9 +169,10 @@ while (my $query = new CGI::Fast) {
       }
     }
     case '/get/messages_list' {
-      # В параметре передается, идентифкатор публичного ключа пользователя и количество последних сообщений для скачивания
+      # В параметре передается, идентифкатор публичного ключа пользователя, количество последних сообщений для скачивания, время последнего скачивания в unixtime
       # Возвращаются идентификаторы определенного количества последних сообщений
       my $id = $query->param('id');
+      my $time = $query->param('time');
       my $count = $query->param('c');
       $count = $cfg->{trust_net}->{messages_list_size} if !defined($count) || ($count eq '');
       $count = 1000 if !defined($count) || ($count eq '');
@@ -179,8 +180,13 @@ while (my $query = new CGI::Fast) {
       if (defined($id) && ($id ne '')) {
         my @messages;
       
-        my $c = $dbh->prepare('SELECT id FROM messages WHERE receiver = ? ORDER BY time desc LIMIT ?');
-        $c->execute($id, $count);
+        if (!defined($time) || ($time eq '')) {
+          # По умолчанию берем все сообщения за последний месяц
+          $time = time() - 30*24*3600;
+        };
+      
+        my $c = $dbh->prepare('SELECT id FROM messages WHERE receiver = ? AND time >= ? ORDER BY time desc LIMIT ?');
+        $c->execute($id, $time, $count);
         while (my ($message_id) = $c->fetchrow_array()) {
           push(@messages, $message_id);
         };
