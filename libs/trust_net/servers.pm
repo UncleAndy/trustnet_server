@@ -11,76 +11,47 @@ package TrustNet::Servers;
 
 use strict;
 
-
-# Выводит персональные идентификаторы админов, заверенные владельцем данного сервера
-sub trusted_admins {
-  my ($dbh, $cfg) = @_;
+# Выводим уровень заверения владельцем данного сервера принадлежности указанного админа к сообществу админов
+sub trusted_admin_tag_level {
+  my ($dbh, $cfg, $person_id) = @_;
   
-  my @admins;
-  my $c = $dbh->prepare('SELECT person_id FROM tags WHERE tag_uuid = ? sign_pub_key_id = ?');
-  $c->execute('00000000-0000-0000-0000-000000000000', $cfg->{server_owner}->{public_key_id});
-  while (my ($person_id) = $c->fetchrow_array()) {
-    push(@admins, $person_id);
-  };
+  my $c = $dbh->prepare('SELECT level FROM tags WHERE person_id = ? AND tag_uuid = ? AND sign_pub_key_id = ?');
+  $c->execute($person_id, '00000000-0000-0000-0000-000000000000', $cfg->{server_owner}->{public_key_id});
+  my ($level) = $c->fetchrow_array();
   $c->finish;
 
-  return(\@admins);
+  return($level);
 };
 
 # Ищем ключ админа, привязанный к персональному идентификатору админа владельцем данного сервера
-sub trusted_admin_public_key_id {
+sub trusted_admin_attestate {
   my ($dbh, $cfg, $person_id) = @_;
   
-  my $c = $dbh->prepare('SELECT att.public_key_id 
+  my $c = $dbh->prepare('SELECT att.public_key_id, att.level 
                           FROM attestations att
                           WHERE 
                             att.person_id = ? AND 
                             att.sign_pub_key_id = ? AND 
-                            att.level > 10 AND 
-                            att.time = (SELECT max(a.time) 
-                                          FROM attestations a 
-                                          WHERE 
-                                            a.person_id = att.person_id AND 
-                                            a.sign_pub_key_id = att.sign_pub_key_id)');
+                            att.is_current');
   $c->execute($person_id, $cfg->{server_owner}->{public_key_id});
   my ($public_key_id) = $c->fetchrow_array();
   $c->finish;
   
-  return($public_key_id);
+  return($public_key_id, $level);
 };
 
-# Возвращаем последний анонс серверов данного админа (по публичному ключу)
+# Возвращаем последний анонсы серверов данного админа (по публичному ключу)
 sub trusted_admin_announce {
   my ($dbh, $cfg, $public_key_id) = @_;
   
   my $c = $dbh->prepare('SELECT sa.servers
                           FROM servers_announces sa
-                          WHERE 
-                            sa.sign_pub_key_id = ? AND 
-                            sa.time = (SELECT max(saa.time) 
-                                          FROM servers_announces saa 
-                                          WHERE saa.sign_pub_key_id = sa.sign_pub_key_id)');
+                          WHERE sa.sign_pub_key_id = ?');
   $c->execute($public_key_id);
   my ($servers) = $c->fetchrow_array();
   $c->finish;
   
   return($servers);
-};
-
-# Функция для пересчета рейтингов серверов сети доверия
-sub calc_ratings {
-  my ($dbh, $cfg) = @_;
-  
-  
-};
-
-# Функция пересчета рейтинга серверов сети доверия для определенного владельца
-# За основу береться идентификатор ключа владельца сервера
-# $owner_id - персональный идентификатор админа
-sub calc_ratings_for_admin {
-  my ($dbh, $cfg, $owner_id) = @_;
-  
-  
 };
 
 1;

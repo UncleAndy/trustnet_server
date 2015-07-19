@@ -10,6 +10,16 @@
 # 404 - на сервере отсутствует запрошенные данные
 # 412 - на сервере отсутствует публичный ключ по которому можно проверить подпись переданных данных 
 
+##################################################################
+# МЕЖСЕРВЕРНОЕ ВЗАИМОДЕСТВИЕ
+# - При наличии новых пакетов в цикле по целевым серверам:
+#   - Создается анонсирующий пакет со списком id новых пакетов для данного целевого сервера
+#   - Все данные пакетов из этого списка размещаются в кэш (Redis)
+#   - Для анонсирующего пакета формируется подпись пакета транспортным ключем сервера
+#   - Пакет со списком id отправляется на целевой сервер
+#   - При приходе запроса на пакеты по id, пакеты беруться только из кэша (Redis)
+##################################################################
+
 BEGIN {
   use YAML;
 
@@ -72,6 +82,11 @@ use FCGI::ProcManager::Constrained;
 require $cfg->{'base_path'}.'/libs/proc.pm';
 require $cfg->{'base_path'}.'/libs/js.pm';
 require $cfg->{'base_path'}.'/libs/db.pm';
+require $cfg->{'base_path'}.'/libs/trustnet.pm';
+
+# Модули
+require $cfg->{'base_path'}.'/server/setup.pm';
+require $cfg->{'base_path'}.'/server/s2s.pm';
 
 # Демонизация
 proc::demonize($cfg->{'log_file'}, $cfg->{'pid_file'});
@@ -284,14 +299,14 @@ while (my $query = new CGI::Fast) {
     # Межсерверные URI
     ######################################################################
     
-    
-    
-
-
-
     else {
-        $result->{status} = 400;
-        $result->{error} = 'Bad request path';
+      if (defined($cfg->{setup_mode}) && ($cfg->{setup_mode} eq '1') && ($query->request_method() eq 'GET')) {
+        # Админка если разрешена
+        $result = setup::process($query, $dbh, $cfg);
+      } else {
+        # Межсерверное взаимодействие
+        $result = s2s::process($query, $dbh, $cfg);
+      }
     };
   };
 
@@ -410,8 +425,10 @@ sub insert_public_key {
       # Идентификатор ключа подписания автора документа
       # Публичный ключ
       my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$data->[2]);
+
+      $dbh->do('UPDATE public_keys SET is_current = \'f\' WHERE content_id = ? AND is_current', undef, $content_id);
       
-      $dbh->do('INSERT INTO public_keys (id, content_id, time, path, doc, doc_type, public_key, public_key_id, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef, 
+      $dbh->do('INSERT INTO public_keys (id, content_id, time, path, doc, doc_type, public_key, public_key_id, sign, sign_pub_key_id, sign_person_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef, 
         $packet_id, 
         $content_id,
         time(), 
@@ -421,9 +438,11 @@ sub insert_public_key {
         $data->[2],
         $sign_pub_key_id,
         $sign, 
-        $sign_pub_key_id);
+        $sign_pub_key_id,
+        $data->[0]);
       if (!$dbh->err) {
         notify_new_packet($packet_id);
+        post_process($packet_id, $doc, $sign, $sign_pub_key_id);
       } else {
         to_syslog('DB ERROR: '.$dbh->errstr);
       };
@@ -452,8 +471,10 @@ sub insert_attestation {
       # Персональный идентификатор заверяемого
       # Идентификатор ключа заверяемого
       my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$person_id.':'.$public_key_id);
+
+      $dbh->do('UPDATE attestations SET is_current = \'f\' WHERE content_id = ? AND is_current', undef, $content_id);
       
-      $dbh->do('INSERT INTO attestations (id, content_id, time, path, doc, doc_type, person_id, public_key_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+      $dbh->do('INSERT INTO attestations (id, content_id, time, path, doc, doc_type, person_id, public_key_id, level, sign, sign_pub_key_id, sign_person_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
         $content_id,
         time(), 
@@ -464,10 +485,12 @@ sub insert_attestation {
         $public_key_id,
         $level,
         $sign,
-        $sign_pub_key_id
+        $sign_pub_key_id,
+        $data->[0]
         );
       if (!$dbh->err) {
         notify_new_packet($packet_id);
+        post_process($packet_id, $doc, $sign, $sign_pub_key_id);
       } else {
         to_syslog('DB ERROR: '.$dbh->errstr);
       };
@@ -494,8 +517,10 @@ sub insert_trust {
       # Идентификатор ключа подписания автора документа
       # Персональный идентификатор заверяемого
       my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$person_id);
+
+      $dbh->do('UPDATE trusts SET is_current = \'f\' WHERE content_id = ? AND is_current', undef, $content_id);
       
-      $dbh->do('INSERT INTO trusts (id, content_id, time, path, doc, doc_type, person_id, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+      $dbh->do('INSERT INTO trusts (id, content_id, time, path, doc, doc_type, person_id, level, sign, sign_pub_key_id, sign_person_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
         $content_id,
         time(), 
@@ -505,10 +530,12 @@ sub insert_trust {
         $person_id,
         $level,
         $sign,
-        $sign_pub_key_id
+        $sign_pub_key_id,
+        $data->[0]
         );
       if (!$dbh->err) {
         notify_new_packet($packet_id);
+        post_process($packet_id, $doc, $sign, $sign_pub_key_id);
       } else {
         to_syslog('DB ERROR: '.$dbh->errstr);
       };
@@ -538,8 +565,10 @@ sub insert_tag {
       # Идентификатор тэга
       # Привязываемый персональный идентификатор
       my $content_id = content_id($data->[0].':'.$sign_pub_key_id.':'.$data->[2].':'.$data->[3]);
+
+      $dbh->do('UPDATE tags SET is_current = \'f\' WHERE content_id = ? AND is_current', undef, $content_id);
       
-      $dbh->do('INSERT INTO tags (id, content_id, time, path, doc, doc_type, tag_uuid, person_id, tag_data, level, sign, sign_pub_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
+      $dbh->do('INSERT INTO tags (id, content_id, time, path, doc, doc_type, tag_uuid, person_id, tag_data, level, sign, sign_pub_key_id, sign_person_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', undef,
         $packet_id, 
         $content_id,
         time(), 
@@ -551,10 +580,12 @@ sub insert_tag {
         $tag_data,
         $level,
         $sign,
-        $sign_pub_key_id
+        $sign_pub_key_id,
+        $data->[0]
         );
       if (!$dbh->err) {
         notify_new_packet($packet_id);
+        post_process($packet_id, $doc, $sign, $sign_pub_key_id);
       } else {
         to_syslog('DB ERROR: '.$dbh->errstr);
       };
@@ -594,6 +625,7 @@ sub insert_message {
         );
       if (!$dbh->err) {
         notify_new_packet($packet_id);
+        post_process($packet_id, $doc, $sign, $sign_pub_key_id);
       } else {
         to_syslog('DB ERROR: '.$dbh->errstr);
       };
@@ -716,6 +748,46 @@ sub notify_new_packet {
   my ($packet_id) = @_;
 
   $dbh->do('INSERT INTO new_packets (id_packet) VALUES (?)', undef, $packet_id);
+};
+
+# Постобработка нового документа
+sub post_process {
+	my ($packet_id, $doc, $sign, $sign_pub_key_id) = @_;
+  
+  return if (!defined($doc) || ($doc eq ''));
+
+  # Если это подпись другого сервера админом данного - помещаем сервер в базу серверов для отправки новых пакетов
+  if (defined($doc->{type}) && ($doc->{type} eq 'TAG') && ($sign_pub_key_id eq $cfg->{server_owner}->{public_key_id})) {
+    my $data = js::to_hash($doc->{dec_data});
+    return if (!defined($data) || ($data eq ''));
+    
+    if ($data->[2] eq 'AAAAAAAAAAAAAAAAAAAAAA==') {
+      my $server_data = js::to_hash($data->[4]);
+      return if (!defined($server_data) || ($server_data eq '') || !defined($server_data->{host}) || ($server_data->{host} eq '') || ($server_data->{host} eq $cfg->{site}));
+      
+      # Проверяем нет-ли уже такого сервера в БД
+      my $c = $dbh->prepare('SELECT s.id, s.rating, pk.public_key, pk.public_key_id FROM servers s, transport_public_keys pk WHERE s.host = ? AND pk.server_id = s.id');
+      $c->execute($server_data->{host});
+      my ($server_id, $server_rating, $server_pub_key, $server_pub_key_id) = $c->fetchrow_array();
+      $c->finish;
+      
+      if (defined($server_id) && ($server_id ne '')) {
+        # Проверяем рейтинг и ставим 127 если не такой
+        $dbh->do('UPDATE servers SET rating = 127 WHERE id = ?', undef, $server_id) if (!defined($server_rating) || ($server_rating ne '127'));
+        # Проверяем соответствующий серверу публичный ключ
+        if ($server_data->{public_key} ne $server_pub_key) {
+          # Если не совпадает - обновляем
+          my $new_server_pub_key_id = calc_pub_key_id($server_data->{public_key});
+          $dbh->do('UPDATE transport_public_keys SET public_key = ?, public_key_id = ? WHERE server_id = ?', undef, 
+            $server_data->{public_key}, new_server_pub_key_id, $server_id);
+        };
+      } else {
+        # Добавляем сервер и публичный ключ
+        my $new_server_id = $dbh->do('INSERT INTO servers (host, t_create, rating) VALUES (?, ?, 127) RETURNING id', undef, $server_data->{host}, time());
+        $dbh->do('INSERT INTO transport_public_keys (server_id, public_key, public_key_id) VALUES (?, ?, ?)', undef, $new_server_id, $server_data->{public_key}, new_server_pub_key_id);
+      };
+    };
+  };
 };
 
 sub sign_str_for_doc {
