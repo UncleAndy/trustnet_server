@@ -7,6 +7,7 @@ package proc;
 
 use strict;
 use POSIX;
+use Sys::Syslog;
 
 my $logname;
 
@@ -197,6 +198,11 @@ sub _sig_rotate_logs {
 		close(STDOUT); open(STDOUT, ">>".$logname);
 		close(STDERR); open(STDERR, ">>".$logname);
 	};
+};
+
+sub to_syslog {
+  my ($msg) = @_;
+  syslog("alert", $msg);
 };
 
 1;

@@ -1,0 +1,12 @@
+base_path: '/home/andy/projects/gplvote.trustnet.server'
+pid_file: '/var/run/gplvote.trustnet.server.get_new_packets.pid'
+log_file: '/var/log/projects/gplvote.trustnet.server.get_new_packets.log'
+cmd_path: '/home/andy/projects/gplvote.trustnet.server/scripts/get_new_packets.pl "/home/andy/projects/gplvote.signdoc.client/scripts/get_new_packets.yml"'
+product_name: 'gplvote.trustnet.server.get_new_packets'
+site: 'trustnet_server0.gplvote.org'
+db:
+  host: '127.0.0.1'
+  port: '5432'
+  name: 'trustnet_server'
+  user: 'postgres_user'
+  password: 'postgres_password'

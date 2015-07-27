@@ -82,7 +82,6 @@ use FCGI::ProcManager::Constrained;
 require $cfg->{'base_path'}.'/libs/proc.pm';
 require $cfg->{'base_path'}.'/libs/js.pm';
 require $cfg->{'base_path'}.'/libs/db.pm';
-require $cfg->{'base_path'}.'/libs/trustnet.pm';
 
 # Модули
 require $cfg->{'base_path'}.'/server/setup.pm';

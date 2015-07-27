@@ -3,7 +3,7 @@ pid_file: '/var/run/gplvote.trustnet.server.pid'
 log_file: '/var/log/projects/gplvote.trustnet.server.log'
 cmd_path: '/home/andy/projects/gplvote.trustnet.server/server/signdoc-client-server.pl "/home/andy/projects/gplvote.signdoc.client/server/config.yml"'
 product_name: 'gplvote.trustnet.server'
-site: 'trustnet_server0.gplvote.org'
+site: 'trustnet-server0.gplvote.org'
 fcgi:
   host: '127.0.0.1'
   port: '9004'
