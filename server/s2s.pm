@@ -48,6 +48,8 @@ sub process {
                 $packet_id,
                 $packet_id);
             };
+            $result->{status} = 200;
+            $result->{error} = '';
           } else {
             $result->{status} = 412;
             $result->{error} = 'Sign is bad';

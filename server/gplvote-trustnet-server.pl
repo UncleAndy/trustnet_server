@@ -431,7 +431,7 @@ sub insert_public_key {
         $packet_id, 
         $content_id,
         time(), 
-        $cfg->{site}, 
+        '', 
         js::from_hash($doc),
         'PUBLIC_KEY',
         $data->[2],
@@ -477,7 +477,7 @@ sub insert_attestation {
         $packet_id, 
         $content_id,
         time(), 
-        $cfg->{site}, 
+        '', 
         js::from_hash($doc),
         'ATTESTATION',
         $person_id,
@@ -523,7 +523,7 @@ sub insert_trust {
         $packet_id, 
         $content_id,
         time(), 
-        $cfg->{site}, 
+        '', 
         js::from_hash($doc),
         'TRUST',
         $person_id,
@@ -571,7 +571,7 @@ sub insert_tag {
         $packet_id, 
         $content_id,
         time(), 
-        $cfg->{site}, 
+        '', 
         js::from_hash($doc),
         'TAG',
         $tag_id,
@@ -613,7 +613,7 @@ sub insert_message {
         $packet_id,
         $content_id,
         time(), 
-        $cfg->{site}, 
+        '', 
         js::from_hash($doc),
         'MESSAGE',
         $receiver,
@@ -741,12 +741,11 @@ sub doc_sign_is_valid {
   }
 };
 
-
 # TODO: Нотификация о новом пакете - пометка пакета как требуемого для отправки на другие сервера
 sub notify_new_packet {
   my ($packet_id) = @_;
 
-  $dbh->do('INSERT INTO new_packets (id_packet) VALUES (?)', undef, $packet_id);
+  $dbh->do('INSERT INTO new_packets (packet_id, t_create) VALUES (?, ?)', undef, $packet_id, time());
 };
 
 # Постобработка нового документа

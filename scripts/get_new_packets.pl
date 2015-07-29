@@ -46,7 +46,7 @@ use URI::Encode qw(uri_encode uri_decode);
 use utf8;
 use Encode qw(encode decode_utf8);
 
-use vars qw($cfg $dbh $packet_types);
+use vars qw($cfg $dbh $packet_types $need_exit);
 
 # Получение конфига из блока BEGIN
 $cfg = _get_config();
@@ -62,7 +62,7 @@ proc::demonize($cfg->{'log_file'}, $cfg->{'pid_file'});
 Sys::Syslog::setlogsock('unix');
 openlog($cfg->{product_name},'ndelay,pid', 'LOG_LOCAL6');
 
-proc::to_syslog("[S2S] Start...");
+proc::to_syslog("[S2S get] Start...");
 
 $packet_types = {
   'ATTESTATION' => { insert_func => \&insert_attestation },
@@ -72,7 +72,9 @@ $packet_types = {
   'PUBLIC_KEY'  => { insert_func => \&insert_public_key },
 };
 
-while (1) {
+$SIG{INT} = \&exit_signal;
+$need_exit = 0;
+while (!$need_exit) {
 	$dbh = db::check_db_connect($dbh, $cfg->{db}->{host}, $cfg->{db}->{port}, $cfg->{db}->{name}, $cfg->{db}->{user}, $cfg->{db}->{password}, 10);
 
 	my $ua = LWP::UserAgent->new(keep_alive => 1, $cfg->{http_timeout} || 10);
@@ -80,7 +82,7 @@ while (1) {
 	my $c->prepare('SELECT q.id, s.host FROM load_packets_queue q, servers ORDER BY t_create');
 	$c->execute();
 	while (my ($packet_id, $host) = $c->fetchrow_array()) {
-		proc::to_syslog("[S2S] Get new packet ".$packet_id." from ".$host);
+		proc::to_syslog("[S2S get] Get new packet ".$packet_id." from ".$host);
 		
 		my $uri_packet_id = uri_encode($packet_id);
 		my $url = 'http://'.$host.'/s2s/get_packet/'.$uri_packet_id;
@@ -93,26 +95,34 @@ while (1) {
 				my $packet = $json_response->{packet};
 				my $packet_type = $packet_types->{$packet->{doc_type}};
 				if (defined($packet_type) && ($packet_type ne '')) {
-					$packet->{path} = $packet->{path}.' '.$cfg->{site};
-					$packet_type->{insert_func}->($packet);
+					my $sep = '';
+					$sep = ' ' if ($packet->{path});
+					$packet->{path} = $packet->{path}.$sep.$host;
+					if ($packet_type->{insert_func}->($packet)) {
+						$dbh->do('DELETE FROM load_packets_queue WHERE id = ?', undef, $packet->{id});
+					};
+					$dbh->commit();
 				} else {
-					proc::to_syslog("[S2S] Unknown packet type: '".$packet->{doc_type}."'";
+					proc::to_syslog("[S2S get] Unknown packet type: '".$packet->{doc_type}."'";
 				}
 			} else {
-				proc::to_syslog("[S2S] HTTP error when download new packet: ".Dumper($response));
+				proc::to_syslog("[S2S get] HTTP error when download new packet: ".Dumper($response));
 			};
 	  }
 		else {
-			proc::to_syslog("[S2S] HTTP error when download new packet: ".Dumper($response));
+			proc::to_syslog("[S2S get] HTTP error when download new packet: ".Dumper($response));
 		}
-				
-		
-		
-		
-		
 	};
 	$c->finish();
 	sleep(10);
+};
+proc::to_syslog("[S2S get] Finished.");
+
+sub exit_signal {
+	$SIG{INT} = \&exit_signal;
+	proc::to_syslog("[S2S get] INT SIGNAL: exit...");
+	
+	$need_exit = 1;
 };
 
 # Функции вставки пакетов по типам
@@ -145,10 +155,12 @@ sub insert_public_key {
 			set_current_flag($content_id, 'public_keys');
 			notify_new_packet($packet_id);
 			post_process($packet_id, $doc, $sign, $sign_pub_key_id);
+			return(1);
 		} else {
 			to_syslog('DB ERROR: '.$dbh->errstr);
 		};
 	};
+	return(0);
 };
 
 sub insert_attestation {
@@ -190,10 +202,12 @@ sub insert_attestation {
 			set_current_flag($content_id, 'attestations');
 			notify_new_packet($packet_id);
 			post_process($packet_id, $doc, $sign, $sign_pub_key_id);
+			return(1);
 		} else {
 			to_syslog('DB ERROR: '.$dbh->errstr);
 		};
 	}
+	return(0);
 };
 
 sub insert_trust {
@@ -232,10 +246,12 @@ sub insert_trust {
 			set_current_flag($content_id, 'trusts');
 			notify_new_packet($packet_id);
 			post_process($packet_id, $doc, $sign, $sign_pub_key_id);
+			return(1);
 		} else {
 			to_syslog('DB ERROR: '.$dbh->errstr);
 		};
 	};
+	return(0);
 };
 
 sub insert_tag {
@@ -279,10 +295,12 @@ sub insert_tag {
 			set_current_flag($content_id, 'tags');
 			notify_new_packet($packet_id);
 			post_process($packet_id, $doc, $sign, $sign_pub_key_id);
+			return(1);
 		} else {
 			to_syslog('DB ERROR: '.$dbh->errstr);
 		};
 	};
+	return(0);
 };
 
 sub insert_message {
@@ -317,10 +335,12 @@ sub insert_message {
 		if (!$dbh->err) {
 			notify_new_packet($packet_id);
 			post_process($packet_id, $doc, $sign, $sign_pub_key_id);
+			return(1);
 		} else {
 			to_syslog('DB ERROR: '.$dbh->errstr);
 		};
 	};
+	return(0);
 };
 
 # Выставлениек флага актуальных данных. Необходимо для анализа сети доверия логикой сервера
@@ -357,7 +377,7 @@ sub content_id {
 sub notify_new_packet {
   my ($packet_id) = @_;
 
-  $dbh->do('INSERT INTO new_packets (id_packet) VALUES (?)', undef, $packet_id);
+  $dbh->do('INSERT INTO new_packets (packet_id, t_create) VALUES (?, ?)', undef, $packet_id, time());
 };
 
 # Постобработка нового документа
