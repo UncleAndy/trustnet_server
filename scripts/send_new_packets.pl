@@ -45,6 +45,8 @@ use Data::Dumper;
 use URI::Encode qw(uri_encode uri_decode);
 use utf8;
 use Encode qw(encode decode_utf8);
+use Crypt::OpenSSL::RSA;
+use GPLVote::SignDoc::Client;
 
 use vars qw($cfg $dbh $packet_types $need_exit);
 
